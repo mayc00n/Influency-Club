@@ -1,0 +1,179 @@
+{
+  "entities": {
+    "Account": {
+      "title": "Account",
+      "description": "Represents a Shopee affiliate account (e.g., TikTok, Instagram, Shopee Video).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "handle": { "type": "string" },
+        "platform": { "type": "string", "enum": ["TikTok", "Instagram", "Shopee Video", "Facebook", "Kwai"] },
+        "status": { "type": "string", "enum": ["active", "paused", "violation_warning", "suspended"] },
+        "stage": { "type": "string", "enum": ["testing", "scaling", "scaled"] },
+        "productionFrequency": { "type": "integer", "description": "Videos per day" },
+        "healthPoints": { "type": "integer", "description": "Current health points of the account" },
+        "linkedProductIds": { "type": "array", "items": { "type": "string" } },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "platform", "status", "stage", "userId"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "A product being promoted.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "userId": { "type": "string" },
+        "shopeeUrl": { "type": "string" },
+        "category": { "type": "string" },
+        "winningStatus": { "type": "string", "enum": ["testing", "potential", "winner", "scaled"] },
+        "price": { "type": "number", "description": "Retail price of the product" },
+        "commissionValue": { "type": "number", "description": "Commission earned per unit" },
+        "notes": { "type": "string" }
+      },
+      "required": ["name", "userId"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "A recorded sale of a product from a specific account/post.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "productId": { "type": "string" },
+        "accountId": { "type": "string" },
+        "scheduleItemId": { "type": "string" },
+        "creatorHandle": { "type": "string" },
+        "quantity": { "type": "integer" },
+        "gmv": { "type": "number" },
+        "commission": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["productId", "accountId", "quantity", "userId", "date"]
+    },
+    "ScheduleItem": {
+      "title": "Schedule Item",
+      "description": "A planned post/video production task.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "userId": { "type": "string" },
+        "accountId": { "type": "string", "description": "Ref to Account" },
+        "productId": { "type": "string", "description": "Ref to Product" },
+        "videoSource": { "type": "string", "description": "Original source URL/Description" },
+        "creatorHandle": { "type": "string", "description": "Reference creator handle" },
+        "creatorLinkId": { "type": "string", "description": "Ref to TikTok reference link" },
+        "sourceVideoLink": { "type": "string", "description": "Original reference video URL" },
+        "productionCode": { "type": "string", "description": "Stable production pipeline code" },
+        "audioMaterial": { "type": "string", "description": "URL to audio material" },
+        "videoMaterial": { "type": "string", "description": "URL to video material" },
+        "finishedVideoUrl": { "type": "string", "description": "URL to finished video" },
+        "status": { "type": "string", "enum": ["planned", "produced", "posted", "cancelled"] },
+        "notes": { "type": "string" }
+      },
+      "required": ["date", "status", "userId"]
+    },
+    "Violation": {
+      "title": "Violation",
+      "description": "Violation records for accounts.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "accountId": { "type": "string" },
+        "userId": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "pointsDeducted": { "type": "integer", "description": "Points lost in this violation" },
+        "description": { "type": "string" },
+        "resolved": { "type": "boolean" }
+      },
+      "required": ["accountId", "date", "pointsDeducted", "userId"]
+    },
+    "CompletedSuggestion": {
+      "title": "Completed Suggestion",
+      "description": "Tracks which replication suggestions were marked as done today.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "key": { "type": "string", "description": "accountId_productId" },
+        "date": { "type": "string", "format": "date" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "key", "date"]
+    },
+    "Producer": {
+      "title": "Producer",
+      "description": "An editor/professional responsible for producing content.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "userId": { "type": "string" },
+        "scope": { "type": "string", "enum": ["PERSONAL", "COMPANY"] },
+        "hidden": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "userId", "scope"]
+    },
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "User specific settings and roles within different access layers.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "uid_VIEWMODE" },
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["PARTNER", "EMPLOYEE"] },
+        "viewMode": { "type": "string", "enum": ["PERSONAL", "COMPANY"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role", "viewMode"]
+    }
+  },
+  "firestore": {
+    "/user_profiles/{profileId}": {
+      "schema": "UserProfile",
+      "description": "User profiles and roles."
+    },
+    "/accounts/{accountId}": {
+      "schema": "Account",
+      "description": "User's affiliate accounts."
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Products database."
+    },
+    "/schedule/{itemId}": {
+      "schema": "ScheduleItem",
+      "description": "Production and posting schedule."
+    },
+    "/violations/{violationId}": {
+      "schema": "Violation",
+      "description": "Violation logs."
+    },
+    "/sales/{saleId}": {
+      "schema": "Sale",
+      "description": "Sales records."
+    },
+    "/completed_suggestions/{suggestionId}": {
+      "schema": "CompletedSuggestion",
+      "description": "Daily completed replication suggestions."
+    },
+    "/producers/{producerId}": {
+      "schema": "Producer",
+      "description": "Content editors database."
+    },
+    "/settings/{settingId}": {
+      "schema": "object",
+      "description": "System settings and credentials."
+    }
+  }
+}
