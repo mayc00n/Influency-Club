@@ -144,6 +144,23 @@ function hasEditableMaterial(item: ScheduleItem): boolean {
   ].some(value => normalizeFileList(value).length > 0);
 }
 
+function getProducerLinkedUserId(producer?: Producer | null): string | undefined {
+  if (!producer) return undefined;
+  return producer.linkedUserId || producer.collaboratorUserId || producer.editorUserId || producer.supplierUserId;
+}
+
+function getProducerLinkedEmail(producer?: Producer | null): string | undefined {
+  if (!producer) return undefined;
+  const rawProducer = producer as any;
+  return producer.linkedUserEmail || producer.linkedEmail || rawProducer.collaboratorEmail || rawProducer.editorEmail || rawProducer.supplierEmail;
+}
+
+function isProducerLinkedToUser(producer: Producer, user: FirebaseUser): boolean {
+  const linkedId = getProducerLinkedUserId(producer);
+  const linkedEmail = getProducerLinkedEmail(producer);
+  return linkedId === user.uid || (!!linkedEmail && linkedEmail.toLowerCase() === user.email?.toLowerCase());
+}
+
 const Login = ({ onBack, onLoginSuccess }: { onBack: () => void, onLoginSuccess: (token: string) => void }) => {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -319,7 +336,7 @@ export default function App() {
   const checkedAccountsRef = useRef<Set<string>>(new Set());
 
   const linkedProducer = user 
-    ? (producers.find(p => p.linkedUserId === user.uid) || producers.find(p => p.linkedUserEmail?.toLowerCase() === user.email?.toLowerCase())) 
+    ? producers.find(p => isProducerLinkedToUser(p, user))
     : undefined;
   const userRole = linkedProducer?.role;
 
@@ -676,12 +693,17 @@ export default function App() {
       // Auto-link logged-in user if matched by email but not yet linked by user ID
       if (user) {
         const unmatchedButEmailed = data.find(p => 
-          p.linkedUserEmail?.toLowerCase() === user.email?.toLowerCase() && 
-          p.linkedUserId !== user.uid
+          getProducerLinkedEmail(p)?.toLowerCase() === user.email?.toLowerCase() && 
+          getProducerLinkedUserId(p) !== user.uid
         );
         if (unmatchedButEmailed) {
           updateDoc(doc(db, 'producers', unmatchedButEmailed.id), {
-            linkedUserId: user.uid
+            linkedUserId: user.uid,
+            collaboratorUserId: user.uid,
+            editorUserId: (unmatchedButEmailed.role || 'editor') === 'editor' ? user.uid : null,
+            supplierUserId: unmatchedButEmailed.role === 'supplier' ? user.uid : null,
+            role: unmatchedButEmailed.role || 'editor',
+            updatedAt: serverTimestamp()
           }).catch(err => console.error('Error auto-linking producer:', err));
         }
       }
@@ -3454,7 +3476,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
   const todayStr = getLocalDateString();
   const pendingProduction = schedule.filter(s => s.status !== ScheduleStatus.POSTED && s.date === todayStr);
 
-  const linkedProducer = producers.find(p => p.linkedUserId === user.uid) || producers.find(p => p.linkedUserEmail?.toLowerCase() === user.email?.toLowerCase());
+  const linkedProducer = producers.find(p => isProducerLinkedToUser(p, user));
   const userRole = linkedProducer?.role;
   const pendingReferenceStorageKey = linkedProducer ? `pending_reference_link_${viewMode || 'PERSONAL'}_${linkedProducer.id}` : null;
   const activePendingReferenceLink = pendingReferenceLink || findPendingSupplierLink(tiktokLinks, pendingReferenceStorageKey ? localStorage.getItem(pendingReferenceStorageKey) : null, linkedProducer?.id) || null;
@@ -3483,6 +3505,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
     try {
       const targetUserId = selectedProfile.uid;
       const targetUserEmail = selectedProfile.email;
+      const targetRole: 'editor' | 'supplier' = showLinkModal.role || (subView === 'suppliers' ? 'supplier' : 'editor');
       
       const producersRef = collection(db, 'producers');
       const qOldLinks = query(
@@ -3493,15 +3516,96 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
       const oldLinksSnapshot = await getDocs(qOldLinks);
       
       for (const docSnap of oldLinksSnapshot.docs) {
+        if (docSnap.id === showLinkModal.id) continue;
         await updateDoc(doc(db, 'producers', docSnap.id), {
           linkedUserId: null,
-          linkedUserEmail: null
+          linkedUserEmail: null,
+          linkedEmail: null,
+          collaboratorUserId: null,
+          editorUserId: null,
+          supplierUserId: null
+        });
+      }
+
+      const qOldEmailLinks = query(
+        producersRef,
+        where('linkedUserEmail', '==', targetUserEmail),
+        where('scope', '==', viewMode || 'PERSONAL')
+      );
+      const oldEmailLinksSnapshot = await getDocs(qOldEmailLinks);
+
+      for (const docSnap of oldEmailLinksSnapshot.docs) {
+        if (docSnap.id === showLinkModal.id) continue;
+        await updateDoc(doc(db, 'producers', docSnap.id), {
+          linkedUserId: null,
+          linkedUserEmail: null,
+          linkedEmail: null,
+          collaboratorUserId: null,
+          editorUserId: null,
+          supplierUserId: null
+        });
+      }
+
+      const qOldAliasEmailLinks = query(
+        producersRef,
+        where('linkedEmail', '==', targetUserEmail),
+        where('scope', '==', viewMode || 'PERSONAL')
+      );
+      const oldAliasEmailLinksSnapshot = await getDocs(qOldAliasEmailLinks);
+
+      for (const docSnap of oldAliasEmailLinksSnapshot.docs) {
+        if (docSnap.id === showLinkModal.id) continue;
+        await updateDoc(doc(db, 'producers', docSnap.id), {
+          linkedUserId: null,
+          linkedUserEmail: null,
+          linkedEmail: null,
+          collaboratorUserId: null,
+          editorUserId: null,
+          supplierUserId: null
         });
       }
       
       await updateDoc(doc(db, 'producers', showLinkModal.id), {
+        role: targetRole,
         linkedUserId: targetUserId,
-        linkedUserEmail: targetUserEmail
+        linkedUserEmail: targetUserEmail,
+        linkedEmail: targetUserEmail,
+        collaboratorUserId: targetUserId,
+        editorUserId: targetRole === 'editor' ? targetUserId : null,
+        supplierUserId: targetRole === 'supplier' ? targetUserId : null,
+        linkedAt: new Date().toISOString(),
+        updatedAt: serverTimestamp()
+      });
+
+      await setDoc(doc(db, 'user_profiles', selectedProfile.id), {
+        role: selectedProfile.role || UserRole.EMPLOYEE,
+        producerRole: targetRole,
+        collaboratorRole: targetRole,
+        producerId: showLinkModal.id,
+        collaboratorId: showLinkModal.id,
+        editorId: targetRole === 'editor' ? showLinkModal.id : null,
+        supplierId: targetRole === 'supplier' ? showLinkModal.id : null,
+        permissions: {
+          production: true,
+          contentVault: true,
+          editor: targetRole === 'editor',
+          supplier: targetRole === 'supplier'
+        },
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      const savedProducerSnap = await getDoc(doc(db, 'producers', showLinkModal.id));
+      const savedProducer = savedProducerSnap.data();
+      if (!savedProducer?.linkedUserId || savedProducer.linkedUserId !== targetUserId || savedProducer.role !== targetRole) {
+        throw new Error('O vinculo nao foi confirmado no Firestore.');
+      }
+
+      console.log('[Production Link User] Saved collaborator link:', {
+        producerId: showLinkModal.id,
+        producerName: showLinkModal.name,
+        targetUserId,
+        targetUserEmail,
+        targetRole
       });
       
       setShowLinkModal(null);
@@ -4190,7 +4294,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                 {producers.filter(p => {
                   if (p.hidden) return false;
                   if (isPartner || userRole === 'supplier') return p.role === 'editor' || !p.role;
-                  if (userRole === 'editor') return p.linkedUserId === user.uid;
+                  if (userRole === 'editor') return isProducerLinkedToUser(p, user);
                   return false;
                 }).map(p => (
                   <button
@@ -5154,7 +5258,8 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                             </div>
                             <div className="space-y-1 relative z-10">
                               <p className="text-white font-black text-sm uppercase tracking-widest">{p.name}</p>
-                              <p className="text-[10px] text-gray-500 font-bold uppercase">{!p.role ? 'Aguardando Atribuição' : 'Editor Profissional'}</p>
+                              <p className="text-[10px] text-gray-500 font-bold uppercase">{getProducerLinkedUserId(p) || getProducerLinkedEmail(p) ? 'Editor Ativo' : (!p.role ? 'Aguardando Atribuição' : 'Editor Profissional')}</p>
+                              {getProducerLinkedEmail(p) && <p className="text-[9px] text-orange-500 font-black uppercase truncate max-w-[120px]">{getProducerLinkedEmail(p)}</p>}
                             </div>
                             <div className="bg-[#0a0a0a] px-4 py-1.5 rounded-full border border-[#222] text-[9px] font-black text-orange-500 uppercase tracking-tighter relative z-10">
                               {pendingProduction.filter(s => s.producerId === p.id).length} PRODUÇÕES
@@ -5195,13 +5300,13 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                   <button 
                                     onClick={() => {
                                       setShowLinkModal(p);
-                                      setLinkEmail(p.linkedUserEmail || '');
+                                      setLinkEmail(getProducerLinkedEmail(p) || '');
                                       setMenuOpenId(null);
                                     }}
                                     className="w-full px-4 py-2 text-left text-[10px] font-black uppercase text-gray-400 hover:text-white hover:bg-white/5 transition-colors flex items-center gap-2"
                                   >
                                     <UserIcon className="w-3 h-3" />
-                                    {p.linkedUserId ? 'Alterar Vínculo' : 'Vincular Usuário'}
+                                    {getProducerLinkedUserId(p) || getProducerLinkedEmail(p) ? 'Alterar Vínculo' : 'Vincular Usuário'}
                                   </button>
                                   <button 
                                     onClick={() => toggleHideProducer(p)}
@@ -5254,8 +5359,8 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                             </div>
                             <div className="space-y-1 relative z-10">
                               <p className="text-white font-black text-sm uppercase tracking-widest">{p.name}</p>
-                              <p className="text-[10px] text-gray-500 font-bold uppercase">{!p.role ? 'Aguardando Atribuição' : 'Preparo de Materiais'}</p>
-                              {p.linkedUserEmail && <p className="text-[9px] text-blue-500 font-black uppercase truncate max-w-[120px]">{p.linkedUserEmail}</p>}
+                              <p className="text-[10px] text-gray-500 font-bold uppercase">{getProducerLinkedUserId(p) || getProducerLinkedEmail(p) ? 'Fornecedor Ativo' : (!p.role ? 'Aguardando Atribuição' : 'Preparo de Materiais')}</p>
+                              {getProducerLinkedEmail(p) && <p className="text-[9px] text-blue-500 font-black uppercase truncate max-w-[120px]">{getProducerLinkedEmail(p)}</p>}
                             </div>
                             <div className="bg-[#0a0a0a] px-4 py-1.5 rounded-full border border-[#222] text-[9px] font-black text-blue-500 uppercase tracking-tighter relative z-10">
                               {pendingProduction.filter(s => s.supplierId === p.id).length} ENCARGOS
@@ -5296,13 +5401,13 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                   <button 
                                     onClick={() => {
                                       setShowLinkModal(p);
-                                      setLinkEmail(p.linkedUserEmail || '');
+                                      setLinkEmail(getProducerLinkedEmail(p) || '');
                                       setMenuOpenId(null);
                                     }}
                                     className="w-full px-4 py-2 text-left text-[10px] font-black uppercase text-gray-400 hover:text-white hover:bg-white/5 transition-colors flex items-center gap-2"
                                   >
                                     <UserIcon className="w-3 h-3" />
-                                    {p.linkedUserId ? 'Alterar Vínculo' : 'Vincular Usuário'}
+                                    {getProducerLinkedUserId(p) || getProducerLinkedEmail(p) ? 'Alterar Vínculo' : 'Vincular Usuário'}
                                   </button>
                                   <button 
                                     onClick={() => toggleHideProducer(p)}
@@ -6441,7 +6546,7 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
   const [videoLink, setVideoLink] = useState('');
   const [linkError, setLinkError] = useState<string | null>(null);
 
-  const linkedProducer = producers.find(p => p.linkedUserId === user.uid) || producers.find(p => p.linkedUserEmail?.toLowerCase() === user.email?.toLowerCase());
+  const linkedProducer = producers.find(p => isProducerLinkedToUser(p, user));
   const userRole = linkedProducer?.role;
 
   // Supplier UI state

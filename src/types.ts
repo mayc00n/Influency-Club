@@ -111,6 +111,11 @@ export interface Producer {
   role?: 'editor' | 'supplier';
   linkedUserId?: string;
   linkedUserEmail?: string;
+  linkedEmail?: string;
+  collaboratorUserId?: string;
+  editorUserId?: string;
+  supplierUserId?: string;
+  linkedAt?: string;
   hidden?: boolean;
   linkedProductIds?: string[];
   createdAt: string;
@@ -134,6 +139,18 @@ export interface UserProfile {
   displayName: string;
   photoURL?: string;
   role: 'PARTNER' | 'EMPLOYEE';
+  producerRole?: 'editor' | 'supplier';
+  collaboratorRole?: 'editor' | 'supplier';
+  producerId?: string;
+  collaboratorId?: string;
+  editorId?: string | null;
+  supplierId?: string | null;
+  permissions?: {
+    production?: boolean;
+    contentVault?: boolean;
+    editor?: boolean;
+    supplier?: boolean;
+  };
   viewMode: 'PERSONAL' | 'COMPANY';
   createdAt: any;
 }
