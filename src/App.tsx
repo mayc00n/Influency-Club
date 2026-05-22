@@ -692,19 +692,25 @@ export default function App() {
       
       // Auto-link logged-in user if matched by email but not yet linked by user ID
       if (user) {
-        const unmatchedButEmailed = data.find(p => 
-          getProducerLinkedEmail(p)?.toLowerCase() === user.email?.toLowerCase() && 
-          getProducerLinkedUserId(p) !== user.uid
-        );
-        if (unmatchedButEmailed) {
-          updateDoc(doc(db, 'producers', unmatchedButEmailed.id), {
+        const explicitUserLink = data.find(p => getProducerLinkedUserId(p) === user.uid);
+        const unmatchedButEmailed = !explicitUserLink
+          ? data.filter(p =>
+              !getProducerLinkedUserId(p) &&
+              getProducerLinkedEmail(p)?.toLowerCase() === user.email?.toLowerCase()
+            )
+          : [];
+        if (unmatchedButEmailed.length === 1) {
+          const producerToLink = unmatchedButEmailed[0];
+          updateDoc(doc(db, 'producers', producerToLink.id), {
             linkedUserId: user.uid,
             collaboratorUserId: user.uid,
-            editorUserId: (unmatchedButEmailed.role || 'editor') === 'editor' ? user.uid : null,
-            supplierUserId: unmatchedButEmailed.role === 'supplier' ? user.uid : null,
-            role: unmatchedButEmailed.role || 'editor',
+            editorUserId: (producerToLink.role || 'editor') === 'editor' ? user.uid : null,
+            supplierUserId: producerToLink.role === 'supplier' ? user.uid : null,
+            role: producerToLink.role || 'editor',
             updatedAt: serverTimestamp()
           }).catch(err => console.error('Error auto-linking producer:', err));
+        } else if (unmatchedButEmailed.length > 1) {
+          console.warn('Auto-link skipped because the same email is present in multiple collaborators:', user.email);
         }
       }
       
@@ -3506,62 +3512,36 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
       const targetUserId = selectedProfile.uid;
       const targetUserEmail = selectedProfile.email;
       const targetRole: 'editor' | 'supplier' = showLinkModal.role || (subView === 'suppliers' ? 'supplier' : 'editor');
-      
-      const producersRef = collection(db, 'producers');
-      const qOldLinks = query(
-        producersRef, 
-        where('linkedUserId', '==', targetUserId), 
-        where('scope', '==', viewMode || 'PERSONAL')
-      );
-      const oldLinksSnapshot = await getDocs(qOldLinks);
-      
-      for (const docSnap of oldLinksSnapshot.docs) {
-        if (docSnap.id === showLinkModal.id) continue;
-        await updateDoc(doc(db, 'producers', docSnap.id), {
-          linkedUserId: null,
-          linkedUserEmail: null,
-          linkedEmail: null,
-          collaboratorUserId: null,
-          editorUserId: null,
-          supplierUserId: null
-        });
+
+      const existingActiveLink = producers.find(p => {
+        if (p.id === showLinkModal.id || p.hidden) return false;
+        const linkedId = getProducerLinkedUserId(p);
+        const linkedEmail = getProducerLinkedEmail(p);
+        return linkedId === targetUserId ||
+          (!!linkedId && !!linkedEmail && linkedEmail.toLowerCase() === targetUserEmail.toLowerCase());
+      });
+
+      if (existingActiveLink) {
+        alert(`Este usuário já está vinculado ao colaborador ${existingActiveLink.name}. Desvincule esse colaborador antes de criar um novo vínculo.`);
+        return;
       }
 
-      const qOldEmailLinks = query(
-        producersRef,
-        where('linkedUserEmail', '==', targetUserEmail),
-        where('scope', '==', viewMode || 'PERSONAL')
-      );
-      const oldEmailLinksSnapshot = await getDocs(qOldEmailLinks);
+      const staleEmailOnlyLinks = producers.filter(p => {
+        if (p.id === showLinkModal.id) return false;
+        const linkedId = getProducerLinkedUserId(p);
+        const linkedEmail = getProducerLinkedEmail(p);
+        return !linkedId && !!linkedEmail && linkedEmail.toLowerCase() === targetUserEmail.toLowerCase();
+      });
 
-      for (const docSnap of oldEmailLinksSnapshot.docs) {
-        if (docSnap.id === showLinkModal.id) continue;
-        await updateDoc(doc(db, 'producers', docSnap.id), {
-          linkedUserId: null,
+      for (const staleProducer of staleEmailOnlyLinks) {
+        await updateDoc(doc(db, 'producers', staleProducer.id), {
           linkedUserEmail: null,
           linkedEmail: null,
           collaboratorUserId: null,
           editorUserId: null,
-          supplierUserId: null
-        });
-      }
-
-      const qOldAliasEmailLinks = query(
-        producersRef,
-        where('linkedEmail', '==', targetUserEmail),
-        where('scope', '==', viewMode || 'PERSONAL')
-      );
-      const oldAliasEmailLinksSnapshot = await getDocs(qOldAliasEmailLinks);
-
-      for (const docSnap of oldAliasEmailLinksSnapshot.docs) {
-        if (docSnap.id === showLinkModal.id) continue;
-        await updateDoc(doc(db, 'producers', docSnap.id), {
-          linkedUserId: null,
-          linkedUserEmail: null,
-          linkedEmail: null,
-          collaboratorUserId: null,
-          editorUserId: null,
-          supplierUserId: null
+          supplierUserId: null,
+          linkedAt: null,
+          updatedAt: serverTimestamp()
         });
       }
       
@@ -3616,6 +3596,68 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
     }
   };
   
+  const handleUnlinkUser = async (producer: Producer) => {
+    const linkedUserId = getProducerLinkedUserId(producer);
+    const linkedEmail = getProducerLinkedEmail(producer);
+    const linkedProfile = userProfiles.find(profile =>
+      (linkedUserId && profile.uid === linkedUserId) ||
+      (!!linkedEmail && profile.email.toLowerCase() === linkedEmail.toLowerCase())
+    );
+    const profileId = linkedProfile?.id || (linkedUserId ? `${linkedUserId}_${viewMode || 'PERSONAL'}` : null);
+
+    if (!linkedUserId && !linkedEmail) return;
+    if (!confirm(`Desvincular ${linkedEmail || 'este usuário'} de ${producer.name}?`)) return;
+
+    try {
+      await updateDoc(doc(db, 'producers', producer.id), {
+        linkedUserId: null,
+        linkedUserEmail: null,
+        linkedEmail: null,
+        collaboratorUserId: null,
+        editorUserId: null,
+        supplierUserId: null,
+        linkedAt: null,
+        updatedAt: serverTimestamp()
+      });
+
+      const hasOtherActiveLink = producers.some(p => {
+        if (p.id === producer.id || p.hidden) return false;
+        const otherId = getProducerLinkedUserId(p);
+        const otherEmail = getProducerLinkedEmail(p);
+        return (!!linkedUserId && otherId === linkedUserId) ||
+          (!!otherId && !!linkedEmail && !!otherEmail && otherEmail.toLowerCase() === linkedEmail.toLowerCase());
+      });
+
+      if (profileId && !hasOtherActiveLink) {
+        await setDoc(doc(db, 'user_profiles', profileId), {
+          producerRole: null,
+          collaboratorRole: null,
+          producerId: null,
+          collaboratorId: null,
+          editorId: null,
+          supplierId: null,
+          permissions: {
+            production: false,
+            contentVault: false,
+            editor: false,
+            supplier: false
+          },
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      }
+
+      setMenuOpenId(null);
+      console.log('[Production Unlink User] Removed collaborator link:', {
+        producerId: producer.id,
+        producerName: producer.name,
+        linkedUserId,
+        linkedEmail
+      });
+    } catch (err: any) {
+      alert('Erro ao desvincular usuário: ' + err.message);
+    }
+  };
+
   const currentProducer = producers.find(p => p.id === activeProducerId);
   const currentProduct = products.find(p => p.id === activeProductId);
 
@@ -5292,21 +5334,25 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                       setEditingProducerRole(p.role || 'editor');
                                       setMenuOpenId(null);
                                     }}
-                                    className="w-full px-4 py-2 text-left text-[10px] font-black uppercase text-gray-400 hover:text-white hover:bg-white/5 transition-colors flex items-center gap-2"
+                                    className={`w-full px-4 py-2 text-left text-[10px] font-black uppercase hover:bg-white/5 transition-colors flex items-center gap-2 ${getProducerLinkedUserId(p) || getProducerLinkedEmail(p) ? 'text-red-500 hover:text-red-400' : 'text-gray-400 hover:text-white'}`}
                                   >
                                     <Pencil className="w-3 h-3" />
                                     Configurar Perfil
                                   </button>
                                   <button 
                                     onClick={() => {
-                                      setShowLinkModal(p);
-                                      setLinkEmail(getProducerLinkedEmail(p) || '');
-                                      setMenuOpenId(null);
+                                      if (getProducerLinkedUserId(p) || getProducerLinkedEmail(p)) {
+                                        handleUnlinkUser(p);
+                                      } else {
+                                        setShowLinkModal(p);
+                                        setLinkEmail('');
+                                        setMenuOpenId(null);
+                                      }
                                     }}
-                                    className="w-full px-4 py-2 text-left text-[10px] font-black uppercase text-gray-400 hover:text-white hover:bg-white/5 transition-colors flex items-center gap-2"
+                                    className={`w-full px-4 py-2 text-left text-[10px] font-black uppercase hover:bg-white/5 transition-colors flex items-center gap-2 ${getProducerLinkedUserId(p) || getProducerLinkedEmail(p) ? 'text-red-500 hover:text-red-400' : 'text-gray-400 hover:text-white'}`}
                                   >
                                     <UserIcon className="w-3 h-3" />
-                                    {getProducerLinkedUserId(p) || getProducerLinkedEmail(p) ? 'Alterar Vínculo' : 'Vincular Usuário'}
+                                    {getProducerLinkedUserId(p) || getProducerLinkedEmail(p) ? 'Desvincular' : 'Vincular Usuário'}
                                   </button>
                                   <button 
                                     onClick={() => toggleHideProducer(p)}
@@ -5400,14 +5446,18 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                   </button>
                                   <button 
                                     onClick={() => {
-                                      setShowLinkModal(p);
-                                      setLinkEmail(getProducerLinkedEmail(p) || '');
-                                      setMenuOpenId(null);
+                                      if (getProducerLinkedUserId(p) || getProducerLinkedEmail(p)) {
+                                        handleUnlinkUser(p);
+                                      } else {
+                                        setShowLinkModal(p);
+                                        setLinkEmail('');
+                                        setMenuOpenId(null);
+                                      }
                                     }}
-                                    className="w-full px-4 py-2 text-left text-[10px] font-black uppercase text-gray-400 hover:text-white hover:bg-white/5 transition-colors flex items-center gap-2"
+                                    className={`w-full px-4 py-2 text-left text-[10px] font-black uppercase hover:bg-white/5 transition-colors flex items-center gap-2 ${getProducerLinkedUserId(p) || getProducerLinkedEmail(p) ? 'text-red-500 hover:text-red-400' : 'text-gray-400 hover:text-white'}`}
                                   >
                                     <UserIcon className="w-3 h-3" />
-                                    {getProducerLinkedUserId(p) || getProducerLinkedEmail(p) ? 'Alterar Vínculo' : 'Vincular Usuário'}
+                                    {getProducerLinkedUserId(p) || getProducerLinkedEmail(p) ? 'Desvincular' : 'Vincular Usuário'}
                                   </button>
                                   <button 
                                     onClick={() => toggleHideProducer(p)}
