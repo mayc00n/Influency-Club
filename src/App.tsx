@@ -144,6 +144,13 @@ function hasEditableMaterial(item: ScheduleItem): boolean {
   ].some(value => normalizeFileList(value).length > 0);
 }
 
+function getSupplierUploadBlockMessages(hasContentLink: boolean, hasLinkedEditor: boolean): string[] {
+  const messages: string[] = [];
+  if (!hasContentLink) messages.push('Adicione o link do conteúdo');
+  if (!hasLinkedEditor) messages.push('Vincule um editor');
+  return messages;
+}
+
 function getProducerLinkedUserId(producer?: Producer | null): string | undefined {
   if (!producer) return undefined;
   return producer.linkedUserId || producer.collaboratorUserId || producer.editorUserId || producer.supplierUserId;
@@ -2017,7 +2024,7 @@ export default function App() {
                   tiktokLinks={tiktokLinks}
                 />
               )}
-              {activeTab.startsWith('products') && <ProductManager products={products} user={user} subView={activeTab === 'products_new' ? 'new' : 'edit'} isPartner={isPartner} ProtectedValue={ProtectedValue} viewMode={viewMode} setActiveTab={setActiveTab} />}
+              {activeTab.startsWith('products') && <ProductManager products={products} producers={producers} user={user} subView={activeTab === 'products_new' ? 'new' : 'edit'} isPartner={isPartner} ProtectedValue={ProtectedValue} viewMode={viewMode} setActiveTab={setActiveTab} />}
               {activeTab === 'sales' && <SalesRegistry schedule={schedule} accounts={accounts} products={products} user={user} sales={sales} tiktokLinks={tiktokLinks} isPartner={isPartner} ProtectedValue={ProtectedValue} viewMode={viewMode} />}
               {activeTab === 'violations' && <ViolationTracker violations={violations} accounts={accounts} user={user} viewMode={viewMode} />}
               {activeTab === 'integrations' && <IntegrationsManager accounts={accounts} />}
@@ -3733,8 +3740,12 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
       let referenceLinkToConsume = shouldRequireReference ? activePendingReferenceLink : null;
 
       if (itemId === 'virtual-draft-item') {
-        if (shouldRequireReference && !referenceLinkToConsume) {
-          alert('Registre primeiro um video TikTok valido antes de subir os materiais.');
+        const selectedEditorId = activeProducerId === 'unassigned' ? '' : (activeProducerId || '');
+        const blockMessages = shouldRequireReference
+          ? getSupplierUploadBlockMessages(!!referenceLinkToConsume, !!selectedEditorId)
+          : [];
+        if (blockMessages.length > 0) {
+          alert(blockMessages.join('\n'));
           return;
         }
         const alreadyNumberedItems = schedule.filter(s => s.date === todayStr && s.dailyIndex && ( (Array.isArray(s.audioMaterial) && s.audioMaterial.length > 0) || (Array.isArray(s.videoMaterial) && s.videoMaterial.length > 0) ));
@@ -3777,9 +3788,12 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
       }
 
       if (!item) return;
-      if (shouldRequireReference && !item.creatorLinkId && !referenceLinkToConsume) {
-        alert('Registre primeiro um video TikTok valido antes de subir os materiais.');
-        return;
+      if (shouldRequireReference) {
+        const blockMessages = getSupplierUploadBlockMessages(!!item.creatorLinkId || !!referenceLinkToConsume, !!item.producerId);
+        if (blockMessages.length > 0) {
+          alert(blockMessages.join('\n'));
+          return;
+        }
       }
 
       let dIndex = item.dailyIndex;
@@ -4529,7 +4543,16 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                         const audios = Array.isArray(item.audioMaterial) ? item.audioMaterial : (item.audioMaterial ? [item.audioMaterial] : []);
                         const videos = Array.isArray(item.videoMaterial) ? item.videoMaterial : (item.videoMaterial ? [item.videoMaterial] : []);
                         const finishedVideos = Array.isArray(item.finishedVideoUrl) ? item.finishedVideoUrl : (item.finishedVideoUrl ? [item.finishedVideoUrl] : []);
-                        const canUploadSupplierMaterial = userRole !== 'supplier' || !!item.creatorLinkId || !!activePendingReferenceLink;
+                        const supplierUploadBlockMessages = userRole === 'supplier'
+                          ? getSupplierUploadBlockMessages(
+                              !!item.creatorLinkId || !!activePendingReferenceLink,
+                              item.id === 'virtual-draft-item'
+                                ? !!activeProducerId && activeProducerId !== 'unassigned'
+                                : !!item.producerId
+                            )
+                          : [];
+                        const canUploadSupplierMaterial = userRole !== 'supplier' || supplierUploadBlockMessages.length === 0;
+                        const supplierUploadBlockTitle = supplierUploadBlockMessages.join(' | ');
 
                         return (
                           <tr key={item.id} className="hover:bg-[#1a1a1a]/50 transition-colors">
@@ -4613,7 +4636,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                         audioInputRef.current?.click();
                                       }}
                                       disabled={!canUploadSupplierMaterial || (uploadingItem?.id === item.id && uploadingItem?.type === 'audio')}
-                                      title={!canUploadSupplierMaterial ? 'Registre primeiro um video TikTok valido antes de subir os materiais.' : 'Carregar audio'}
+                                      title={!canUploadSupplierMaterial ? supplierUploadBlockTitle : 'Carregar audio'}
                                       className="w-full py-3.5 px-4 rounded-xl border border-dashed border-[#333] hover:border-blue-500/50 bg-[#0a0a0a] hover:bg-blue-500/5 text-[11px] font-black uppercase tracking-widest text-gray-400 hover:text-white flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                       {uploadingItem?.id === item.id && uploadingItem?.type === 'audio' ? (
@@ -4684,7 +4707,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                         videoInputRef.current?.click();
                                       }}
                                       disabled={!canUploadSupplierMaterial || (uploadingItem?.id === item.id && uploadingItem?.type === 'video')}
-                                      title={!canUploadSupplierMaterial ? 'Registre primeiro um video TikTok valido antes de subir os materiais.' : 'Carregar brutos'}
+                                      title={!canUploadSupplierMaterial ? supplierUploadBlockTitle : 'Carregar brutos'}
                                       className="w-full py-3.5 px-4 rounded-xl border border-dashed border-[#333] hover:border-purple-500/50 bg-[#0a0a0a] hover:bg-purple-500/5 text-[11px] font-black uppercase tracking-widest text-gray-400 hover:text-white flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                       {uploadingItem?.id === item.id && uploadingItem?.type === 'video' ? (
@@ -4739,7 +4762,9 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
 
                                   {!canUploadSupplierMaterial && (
                                     <div className="md:col-span-2 bg-yellow-500/10 border border-yellow-500/20 text-yellow-300 rounded-2xl p-3 text-[11px] font-bold leading-relaxed">
-                                      Registre primeiro um video TikTok valido antes de subir os materiais.
+                                      {supplierUploadBlockMessages.map(message => (
+                                        <div key={message}>{message}</div>
+                                      ))}
                                     </div>
                                   )}
                                 </div>
@@ -6663,11 +6688,31 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
     }
   };
 
+  const getPlannerUploadBlockMessages = (item: ScheduleItem, type: 'audio' | 'video') => {
+    const inputs = slotInputs[item.id] || { audioUrl: '', videoUrl: '', notes: '' };
+    const hasContentLink = type === 'audio' ? !!inputs.audioUrl.trim() : !!inputs.videoUrl.trim();
+    return getSupplierUploadBlockMessages(hasContentLink, !!item.producerId);
+  };
+
+  const getPlannerSendBlockMessages = (item: ScheduleItem) => {
+    const inputs = slotInputs[item.id] || { audioUrl: '', videoUrl: '', notes: '' };
+    const hasTypedLink = !!inputs.audioUrl.trim() || !!inputs.videoUrl.trim();
+    const hasMaterial = normalizeFileList(item.audioMaterial).length > 0 || normalizeFileList(item.videoMaterial).length > 0;
+    return getSupplierUploadBlockMessages(hasTypedLink || hasMaterial, !!item.producerId);
+  };
+
   const handleUploadFile = async (itemId: string, type: 'audio' | 'video', file: File) => {
-    setUploadingItem({ id: itemId, type });
     try {
       const item = schedule.find(s => s.id === itemId);
       if (!item) return;
+
+      const blockMessages = getPlannerUploadBlockMessages(item, type);
+      if (blockMessages.length > 0) {
+        alert(blockMessages.join('\n'));
+        return;
+      }
+
+      setUploadingItem({ id: itemId, type });
 
       const productItems = schedule
         .filter(s => s.date === item.date && s.productId === item.productId)
@@ -6812,6 +6857,11 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
       const computedCode = `${String(indexOnDay + 1).padStart(3, '0')}-${formattedDate}`; // "001-20/05"
       
       const inputs = slotInputs[item.id] || { audioUrl: '', videoUrl: '', notes: '' };
+      const blockMessages = getPlannerSendBlockMessages(item);
+      if (blockMessages.length > 0) {
+        alert(blockMessages.join('\n'));
+        return;
+      }
       
       const updates: any = {
         supplierId: linkedProducer.id,
@@ -6919,6 +6969,14 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
   const [uploadContext, setUploadContext] = useState<{ id: string, type: 'audio' | 'video' } | null>(null);
 
   const triggerLocalUpload = (itemId: string, type: 'audio' | 'video') => {
+    const item = schedule.find(s => s.id === itemId);
+    if (item) {
+      const blockMessages = getPlannerUploadBlockMessages(item, type);
+      if (blockMessages.length > 0) {
+        alert(blockMessages.join('\n'));
+        return;
+      }
+    }
     setUploadContext({ id: itemId, type });
     setTimeout(() => {
       fileInputRef.current?.click();
@@ -7058,6 +7116,9 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
                             const isPlanned = item.status === ScheduleStatus.PLANNED;
                             const inputs = slotInputs[item.id] || { audioUrl: '', videoUrl: '', notes: '' };
                             const isCurrentlyUploading = uploadingItem?.id === item.id;
+                            const audioUploadBlockMessages = getPlannerUploadBlockMessages(item, 'audio');
+                            const videoUploadBlockMessages = getPlannerUploadBlockMessages(item, 'video');
+                            const sendBlockMessages = getPlannerSendBlockMessages(item);
                             
                             return (
                               <div key={item.id} className="bg-[#0c0c0c] border border-[#222] rounded-3xl p-6 space-y-4">
@@ -7097,13 +7158,20 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
                                           value={inputs.audioUrl}
                                           onChange={e => handleSlotInputChange(item.id, 'audioUrl', e.target.value)}
                                         />
-                                        <button 
+                                        <button
                                           onClick={() => triggerLocalUpload(item.id, 'audio')}
-                                          className="w-full py-2 bg-[#1a1a1a] border border-[#222] text-gray-400 hover:text-white text-[10px] font-black uppercase rounded-xl transition-all flex items-center justify-center gap-1"
+                                          disabled={audioUploadBlockMessages.length > 0 || (isCurrentlyUploading && uploadingItem?.type === 'audio')}
+                                          title={audioUploadBlockMessages.join(' | ')}
+                                          className="w-full py-2 bg-[#1a1a1a] border border-[#222] text-gray-400 hover:text-white text-[10px] font-black uppercase rounded-xl transition-all flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                           <Upload className="w-3 h-3" /> 
                                           {isCurrentlyUploading && uploadingItem?.type === 'audio' ? 'Enviando...' : 'Fazer Upload de Áudio'}
                                         </button>
+                                        {audioUploadBlockMessages.length > 0 && (
+                                          <div className="text-[10px] font-bold text-yellow-400/90 leading-relaxed">
+                                            {audioUploadBlockMessages.map(message => <div key={message}>{message}</div>)}
+                                          </div>
+                                        )}
                                         {/* Uploaded Audio Files in real-time */}
                                         {Array.isArray(item.audioMaterial) && item.audioMaterial.map((m: any, mIdx) => (
                                           <div key={mIdx} className="flex items-center justify-between gap-2 mt-1.5 bg-[#141414] px-3 py-1.5 border border-[#222] rounded-xl">
@@ -7139,13 +7207,20 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
                                           value={inputs.videoUrl}
                                           onChange={e => handleSlotInputChange(item.id, 'videoUrl', e.target.value)}
                                         />
-                                        <button 
+                                        <button
                                           onClick={() => triggerLocalUpload(item.id, 'video')}
-                                          className="w-full py-2 bg-[#1a1a1a] border border-[#222] text-gray-400 hover:text-white text-[10px] font-black uppercase rounded-xl transition-all flex items-center justify-center gap-1"
+                                          disabled={videoUploadBlockMessages.length > 0 || (isCurrentlyUploading && uploadingItem?.type === 'video')}
+                                          title={videoUploadBlockMessages.join(' | ')}
+                                          className="w-full py-2 bg-[#1a1a1a] border border-[#222] text-gray-400 hover:text-white text-[10px] font-black uppercase rounded-xl transition-all flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
                                           <Upload className="w-3 h-3" /> 
                                           {isCurrentlyUploading && uploadingItem?.type === 'video' ? 'Enviando...' : 'Fazer Upload de Vídeo'}
                                         </button>
+                                        {videoUploadBlockMessages.length > 0 && (
+                                          <div className="text-[10px] font-bold text-yellow-400/90 leading-relaxed">
+                                            {videoUploadBlockMessages.map(message => <div key={message}>{message}</div>)}
+                                          </div>
+                                        )}
                                         {/* Uploaded Video Files in real-time */}
                                         {Array.isArray(item.videoMaterial) && item.videoMaterial.map((m: any, mIdx) => (
                                           <div key={mIdx} className="flex items-center justify-between gap-2 mt-1.5 bg-[#141414] px-3 py-1.5 border border-[#222] rounded-xl">
@@ -7198,10 +7273,17 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
 
                                     <button 
                                       onClick={() => handleSendToEditing(item, idx)}
-                                      className="w-full py-3 bg-blue-500 text-white hover:bg-blue-400 rounded-xl font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-blue-500/10"
+                                      disabled={sendBlockMessages.length > 0}
+                                      title={sendBlockMessages.join(' | ')}
+                                      className="w-full py-3 bg-blue-500 text-white hover:bg-blue-400 rounded-xl font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-blue-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                       Finalizar e Enviar p/ Editor
                                     </button>
+                                    {sendBlockMessages.length > 0 && (
+                                      <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-300 rounded-2xl p-3 text-[11px] font-bold leading-relaxed">
+                                        {sendBlockMessages.map(message => <div key={message}>{message}</div>)}
+                                      </div>
+                                    )}
                                   </div>
                                 ) : (
                                   // Done view
@@ -8081,7 +8163,7 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
   );
 }
 
-function ProductManager({ products, user, subView, isPartner, ProtectedValue, viewMode, setActiveTab }: { products: Product[], user: FirebaseUser, subView: 'new' | 'edit', isPartner: boolean, ProtectedValue: any, viewMode: ViewMode, setActiveTab: (t: string) => void }) {
+function ProductManager({ products, producers, user, subView, isPartner, ProtectedValue, viewMode, setActiveTab }: { products: Product[], producers: Producer[], user: FirebaseUser, subView: 'new' | 'edit', isPartner: boolean, ProtectedValue: any, viewMode: ViewMode, setActiveTab: (t: string) => void }) {
   const [newProd, setNewProd] = useState({ name: '', category: '', winningStatus: WinningStatus.TESTING, price: 0, commissionValue: 0, imageUrl: '', productUrl: '', referenceUrl: '' });
   const [searchTerm, setSearchTerm] = useState('');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -8116,12 +8198,22 @@ function ProductManager({ products, user, subView, isPartner, ProtectedValue, vi
   const handleCreate = async () => {
     if (!newProd.name) return;
     try {
-      await addDoc(collection(db, 'products'), { 
+      const docRef = await addDoc(collection(db, 'products'), { 
         ...newProd, 
         userId: user.uid,
         scope: viewMode === ViewMode.COMPANY ? 'COMPANY' : 'PERSONAL',
         createdAt: new Date().toISOString()
       });
+
+      const activeEditors = producers.filter(p => !p.hidden && (p.role === 'editor' || !p.role));
+      await Promise.all(activeEditors.map(editor => {
+        const linkedProductIds = Array.isArray(editor.linkedProductIds) ? editor.linkedProductIds : [];
+        if (linkedProductIds.includes(docRef.id)) return Promise.resolve();
+        return updateDoc(doc(db, 'producers', editor.id), {
+          linkedProductIds: [...linkedProductIds, docRef.id]
+        });
+      }));
+
       setNewProd({ name: '', category: '', winningStatus: WinningStatus.TESTING, price: 0, commissionValue: 0, imageUrl: '', productUrl: '', referenceUrl: '' });
       setActiveTab('products_edit');
     } catch (e) { 
