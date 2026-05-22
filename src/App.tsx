@@ -342,9 +342,27 @@ export default function App() {
   
   const checkedAccountsRef = useRef<Set<string>>(new Set());
 
-  const linkedProducer = user 
-    ? producers.find(p => isProducerLinkedToUser(p, user))
-    : undefined;
+  const linkedProducer = useMemo(() => {
+    if (!user) return undefined;
+
+    const linkedByUser = producers.filter(p => isProducerLinkedToUser(p, user));
+    if (linkedByUser.length === 0) return undefined;
+
+    const profileEditorId = profile?.editorId || profile?.producerId || profile?.collaboratorId;
+    const profileSupplierId = profile?.supplierId || profile?.producerId || profile?.collaboratorId;
+
+    if (profile?.producerRole === 'editor' || profile?.collaboratorRole === 'editor') {
+      return linkedByUser.find(p => p.id === profileEditorId && (p.role === 'editor' || !p.role)) ||
+        linkedByUser.find(p => p.role === 'editor' || !p.role);
+    }
+
+    if (profile?.producerRole === 'supplier' || profile?.collaboratorRole === 'supplier') {
+      return linkedByUser.find(p => p.id === profileSupplierId && p.role === 'supplier') ||
+        linkedByUser.find(p => p.role === 'supplier');
+    }
+
+    return linkedByUser[0];
+  }, [user, producers, profile]);
   const userRole = linkedProducer?.role;
 
   useEffect(() => {
@@ -4204,6 +4222,40 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
     );
   }, [schedule, activeProducerId, activeProductId]);
 
+  const getVisibleProductionItems = () => {
+    const allProductItems = pendingProduction
+      .filter(item => {
+        const condProducer = activeProducerId === 'unassigned' ? !item.producerId : item.producerId === activeProducerId;
+        const condProduct = item.productId === activeProductId;
+        const condMaterial = userRole === 'editor' ? hasEditableMaterial(item) : true;
+        return condProducer && condProduct && condMaterial;
+      })
+      .sort((a, b) => {
+        const dateComp = a.date.localeCompare(b.date);
+        if (dateComp !== 0) return dateComp;
+        return (a.dailyIndex || 0) - (b.dailyIndex || 0);
+      });
+
+    const firstUncompletedIdx = allProductItems.findIndex(item => !isSupplierDone(item));
+    if (userRole === 'editor') return allProductItems;
+    if (firstUncompletedIdx !== -1) return allProductItems.slice(0, firstUncompletedIdx + 1);
+
+    const virtualItem: ScheduleItem = {
+      id: 'virtual-draft-item',
+      userId: user?.uid || '',
+      accountId: '',
+      productId: activeProductId || '',
+      producerId: activeProducerId === 'unassigned' ? '' : (activeProducerId || ''),
+      supplierId: linkedProducer?.id || '',
+      status: ScheduleStatus.PLANNED,
+      audioMaterial: [],
+      videoMaterial: [],
+      finishedVideoUrl: [],
+      date: todayStr,
+    };
+    return [...allProductItems, virtualItem];
+  };
+
   return (
     <div className="space-y-8">
       {/* Header with Navigation */}
@@ -4469,7 +4521,149 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                     />
                   </div>
                 )}
-                <div className="bg-[#141414] border border-[#222] rounded-[2.5rem] overflow-hidden">
+                {userRole === 'editor' && (
+                  <div className="md:hidden space-y-4">
+                    {(() => {
+                      const displayedItems = getVisibleProductionItems();
+
+                      if (displayedItems.length === 0) {
+                        return (
+                          <div className="bg-[#141414] border border-[#222] rounded-3xl px-5 py-10 text-center">
+                            <p className="text-sm font-black text-white uppercase tracking-widest">Nenhum material pendente</p>
+                            <p className="text-xs text-gray-500 leading-relaxed mt-2">
+                              Este produto continua vinculado a voce. Quando novos materiais chegarem, eles aparecerao aqui; o historico permanece disponivel no Cofre de Conteudos abaixo.
+                            </p>
+                          </div>
+                        );
+                      }
+
+                      return displayedItems.map(item => {
+                        const acc = accounts.find(a => a.id === item.accountId);
+                        const audios = Array.isArray(item.audioMaterial) ? item.audioMaterial : (item.audioMaterial ? [item.audioMaterial] : []);
+                        const videos = Array.isArray(item.videoMaterial) ? item.videoMaterial : (item.videoMaterial ? [item.videoMaterial] : []);
+                        const finishedVideos = Array.isArray(item.finishedVideoUrl) ? item.finishedVideoUrl : (item.finishedVideoUrl ? [item.finishedVideoUrl] : []);
+                        const hasFinished = finishedVideos.length > 0;
+
+                        return (
+                          <div key={item.id} className="bg-[#141414] border border-[#222] rounded-3xl p-5 space-y-5">
+                            <div className="flex items-start gap-3">
+                              <div className="w-11 h-11 bg-[#0a0a0a] rounded-xl flex items-center justify-center border border-[#222] overflow-hidden shrink-0">
+                                {acc?.imageUrl ? <img src={acc.imageUrl} className="w-full h-full object-cover" alt="" /> : <Monitor className="w-4 h-4 text-gray-600" />}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-sm font-black text-white leading-tight">
+                                  {(item.dailyIndex && hasAnyMaterial(item)) ? `${String(item.dailyIndex).padStart(3, '0')} - ` : ''}{currentProduct?.name}
+                                </p>
+                                <p className="text-[10px] text-gray-500 font-bold uppercase mt-1">{acc?.name || 'Sem Conta'}</p>
+                              </div>
+                            </div>
+
+                            <div className="space-y-3">
+                              <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Materiais brutos</p>
+                              {audios.length === 0 && videos.length === 0 ? (
+                                <p className="text-xs text-gray-600 italic">Nenhum material</p>
+                              ) : (
+                                <div className="space-y-2">
+                                  {audios.map((file: any, idx: number) => {
+                                    const url = typeof file === 'string' ? file : file.url;
+                                    const name = typeof file === 'string' ? `Audio #${idx + 1}` : (file.name || `Audio #${idx + 1}`);
+                                    return (
+                                      <a
+                                        key={`mobile-audio-${idx}`}
+                                        href={url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="flex items-center gap-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 px-3 py-3 rounded-2xl text-xs font-bold transition-all w-full min-w-0"
+                                        title={name}
+                                      >
+                                        <Music className="w-4 h-4 shrink-0" />
+                                        <span className="truncate flex-1 text-left">{name}</span>
+                                        <Download className="w-4 h-4 shrink-0 text-gray-400" />
+                                      </a>
+                                    );
+                                  })}
+                                  {videos.map((file: any, idx: number) => {
+                                    const url = typeof file === 'string' ? file : file.url;
+                                    const name = typeof file === 'string' ? `Bruto #${idx + 1}` : (file.name || `Bruto #${idx + 1}`);
+                                    return (
+                                      <a
+                                        key={`mobile-video-${idx}`}
+                                        href={url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="flex items-center gap-2 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 px-3 py-3 rounded-2xl text-xs font-bold transition-all w-full min-w-0"
+                                        title={name}
+                                      >
+                                        <Video className="w-4 h-4 shrink-0" />
+                                        <span className="truncate flex-1 text-left">{name}</span>
+                                        <Download className="w-4 h-4 shrink-0 text-gray-400" />
+                                      </a>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="space-y-3">
+                              <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Video final</p>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    setActiveUploadContext({ id: item.id, type: 'finished' });
+                                    finishedInputRef.current?.click();
+                                  }}
+                                  disabled={uploadingItem?.id === item.id}
+                                  className={`flex-1 min-w-[160px] justify-center px-4 py-3 rounded-2xl border flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all ${
+                                    hasFinished
+                                      ? 'bg-green-500/10 border-green-500/30 text-green-500 hover:bg-green-500/20'
+                                      : 'bg-orange-500/10 border-orange-500/30 text-orange-500 hover:bg-orange-500/20'
+                                  } ${uploadingItem?.id === item.id ? 'opacity-50 cursor-wait' : ''}`}
+                                >
+                                  {uploadingItem?.id === item.id && uploadingItem?.type === 'finished' ? (
+                                    <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                  ) : (
+                                    <CloudUpload className="w-3 h-3" />
+                                  )}
+                                  {uploadingItem?.id === item.id && uploadingItem?.type === 'finished' ? 'Carregando...' : (hasFinished ? 'Atualizar' : 'Enviar Vídeo')}
+                                </button>
+
+                                {hasFinished && !uploadingItem && (
+                                  <>
+                                    <button
+                                      onClick={() => {
+                                        const file = finishedVideos[0] as any;
+                                        const url = typeof file === 'string' ? file : file.url;
+                                        const name = typeof file === 'string' ? 'Video pronto' : (file.name || 'Video pronto');
+                                        setActivePreviewVideo({ url, name, type: 'video' });
+                                      }}
+                                      className="p-3 bg-[#0a0a0a] border border-[#222] rounded-2xl text-green-500 hover:text-green-400"
+                                      title="Reproduzir video pronto"
+                                    >
+                                      <Play className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        const file = finishedVideos[0] as any;
+                                        const url = typeof file === 'string' ? file : file.url;
+                                        handleDeleteAsset(item, 'finished', url);
+                                      }}
+                                      className="p-3 bg-[#0a0a0a] border border-[#222] rounded-2xl text-red-500 hover:text-red-400"
+                                      title="Excluir video pronto"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                )}
+
+                <div className={`${userRole === 'editor' ? 'hidden md:block' : ''} bg-[#141414] border border-[#222] rounded-[2.5rem] overflow-hidden`}>
                 <table className="w-full text-left">
                   <thead>
                     <tr className="border-b border-[#222] bg-[#1a1a1a]/50">
@@ -4487,41 +4681,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                   </thead>
                   <tbody className="divide-y divide-[#222]">
                     {(() => {
-                      const allProductItems = pendingProduction
-                        .filter(item => {
-                          const condProducer = activeProducerId === 'unassigned' ? !item.producerId : item.producerId === activeProducerId;
-                          const condProduct = item.productId === activeProductId;
-                          const condMaterial = userRole === 'editor' ? hasEditableMaterial(item) : true;
-                          return condProducer && condProduct && condMaterial;
-                        })
-                        .sort((a, b) => {
-                          const dateComp = a.date.localeCompare(b.date);
-                          if (dateComp !== 0) return dateComp;
-                          return (a.dailyIndex || 0) - (b.dailyIndex || 0);
-                        });
-
-                      let displayedItems = allProductItems;
-                      const firstUncompletedIdx = allProductItems.findIndex(item => !isSupplierDone(item));
-                      if (userRole === 'editor') {
-                        displayedItems = allProductItems;
-                      } else if (firstUncompletedIdx !== -1) {
-                        displayedItems = allProductItems.slice(0, firstUncompletedIdx + 1);
-                      } else {
-                        const virtualItem: ScheduleItem = {
-                          id: 'virtual-draft-item',
-                          userId: user?.uid || '',
-                          accountId: '',
-                          productId: activeProductId || '',
-                          producerId: activeProducerId === 'unassigned' ? '' : (activeProducerId || ''),
-                          supplierId: linkedProducer?.id || '',
-                          status: ScheduleStatus.PLANNED,
-                          audioMaterial: [],
-                          videoMaterial: [],
-                          finishedVideoUrl: [],
-                          date: todayStr,
-                        };
-                        displayedItems = [...allProductItems, virtualItem];
-                      }
+                      const displayedItems = getVisibleProductionItems();
 
                       if (displayedItems.length === 0) {
                         return (
