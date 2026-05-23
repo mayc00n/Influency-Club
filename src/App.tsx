@@ -1205,22 +1205,22 @@ export default function App() {
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto w-full h-screen">
-        <header className="h-16 border-b border-[#222] flex items-center justify-between px-4 md:px-8 bg-[#0a0a0a]/80 backdrop-blur-md sticky top-0 z-10">
-          <div className="flex items-center gap-4">
+        <header className="min-h-16 border-b border-[#222] flex items-center justify-between gap-3 px-3 py-2 md:px-8 md:py-0 bg-[#0a0a0a]/80 backdrop-blur-md sticky top-0 z-10">
+          <div className="flex items-center gap-3 min-w-0">
             <button 
               onClick={() => setMobileMenuOpen(true)}
               className="p-2 hover:bg-[#1a1a1a] rounded-lg transition-colors md:hidden text-white"
             >
               <Menu className="w-6 h-6" />
             </button>
-            <h2 className="text-lg font-semibold text-white capitalize truncate">
+            <h2 className="text-sm sm:text-lg font-semibold text-white capitalize truncate">
               {activeTab === 'planner' && userRole === 'supplier' ? 'Gemini' : activeTab.replace('_', ' ')}
             </h2>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center justify-end gap-2 md:gap-4 shrink-0">
             {!driveConfigured && isPartner && (
               <button 
-                className="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-lg shadow-orange-900/20 active:scale-95 flex items-center gap-2"
+                className="bg-orange-600 hover:bg-orange-700 text-white px-2.5 md:px-3 py-2 md:py-1.5 rounded-lg text-[10px] md:text-xs font-bold transition-all shadow-lg shadow-orange-900/20 active:scale-95 flex items-center gap-2"
                 onClick={async () => {
                   const res = await fetch(`/api/drive/auth-url`);
                   const data = await res.json();
@@ -1228,7 +1228,8 @@ export default function App() {
                 }}
               >
                 <Monitor className="w-3.5 h-3.5" />
-                Configurar Drive Global
+                <span className="hidden sm:inline">Configurar Drive Global</span>
+                <span className="sm:hidden">Drive</span>
               </button>
             )}
             <button className="p-2 hover:bg-[#1a1a1a] rounded-lg transition-colors">
@@ -1859,7 +1860,7 @@ export default function App() {
 
                               return (
                                 <tr key={acc.id} className="hover:bg-[#1a1a1a] transition-colors">
-                                  <td className="px-6 py-4">
+                                  <td data-label="Conta" className="px-6 py-4">
                                     <div className="flex items-center gap-3">
                                       <div className="w-8 h-8 rounded-lg bg-gray-800 flex items-center justify-center overflow-hidden">
                                         {acc.imageUrl ? (
@@ -1874,7 +1875,7 @@ export default function App() {
                                       </div>
                                     </div>
                                   </td>
-                                  <td className="px-6 py-4">
+                                  <td data-label="Saude" className="px-6 py-4">
                                     <div className="flex items-center gap-2">
                                       <div className={`w-2 h-2 rounded-full ${acc.healthPoints > 195 ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.3)]' : acc.healthPoints >= 145 ? 'bg-yellow-500' : 'bg-red-500'}`} />
                                       <span className={`text-sm font-bold ${acc.healthPoints > 195 ? 'text-green-500' : acc.healthPoints >= 145 ? 'text-yellow-500' : 'text-red-500'}`}>
@@ -1882,12 +1883,12 @@ export default function App() {
                                       </span>
                                     </div>
                                   </td>
-                                  <td className="px-6 py-4 text-center">
+                                  <td data-label="Produtos" className="px-6 py-4 text-center">
                                     <span className="text-sm text-white font-bold bg-[#1a1a1a] px-2 py-1 rounded-lg border border-[#222]">
                                       {acc.linkedProductIds?.length || 0}
                                     </span>
                                   </td>
-                                  <td className="px-6 py-4">
+                                  <td data-label="Post/Dia" className="px-6 py-4">
                                     <div className="flex items-center gap-2">
                                       <span className={`text-sm font-bold ${postsToday >= acc.productionFrequency ? 'text-green-500' : 'text-white'}`}>{postsToday}</span>
                                       <div className="w-12 h-1.5 bg-gray-800 rounded-full overflow-hidden">
@@ -1898,10 +1899,10 @@ export default function App() {
                                       </div>
                                     </div>
                                   </td>
-                                  <td className="px-6 py-4">
+                                  <td data-label="Meta/Dia" className="px-6 py-4">
                                     <span className="text-sm font-mono text-gray-400 font-bold">{acc.productionFrequency}x</span>
                                   </td>
-                                  <td className="px-6 py-4">
+                                  <td data-label="Estagio" className="px-6 py-4">
                                     <StageBadge stage={acc.stage} />
                                   </td>
                                 </tr>
@@ -1939,7 +1940,7 @@ export default function App() {
 
                               return (
                                 <tr key={prod.id} className="hover:bg-[#1a1a1a] transition-colors">
-                                  <td className="px-6 py-4">
+                                  <td data-label="Produto" className="px-6 py-4">
                                     <div className="flex items-center gap-3">
                                       <div className="w-8 h-8 rounded-lg bg-gray-800 flex items-center justify-center overflow-hidden">
                                         {prod.imageUrl ? (
@@ -1951,7 +1952,7 @@ export default function App() {
                                       <span className="text-sm font-medium text-white">{prod.name}</span>
                                     </div>
                                   </td>
-                                  <td className="px-6 py-4">
+                                  <td data-label="Contas Ativas" className="px-6 py-4">
                                     <div className="relative">
                                       <button 
                                         onClick={() => setExpandedProductAccounts(expandedProductAccounts === prod.id ? null : prod.id)}
@@ -1999,10 +2000,10 @@ export default function App() {
                                       </AnimatePresence>
                                     </div>
                                   </td>
-                                  <td className="px-6 py-4">
+                                  <td data-label="Fase" className="px-6 py-4">
                                     <WinningStatusBadge status={prod.winningStatus} />
                                   </td>
-                                  <td className="px-6 py-4 text-xs text-gray-500">
+                                  <td data-label="Categoria" className="px-6 py-4 text-xs text-gray-500">
                                     {prod.category || 'N/A'}
                                   </td>
                                 </tr>
@@ -2104,7 +2105,7 @@ function UserManager({ contextUser, isPartner }: { contextUser: FirebaseUser, is
           <tbody className="divide-y divide-[#222]">
             {profiles.sort((a,b) => a.role.localeCompare(b.role)).map((p) => (
               <tr key={p.id} className="hover:bg-[#1a1a1a] transition-colors">
-                <td className="px-6 py-4">
+                <td data-label="Usuario" className="px-6 py-4">
                   <div className="flex items-center gap-3">
                     <img src={p.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(p.displayName)}`} className="w-8 h-8 rounded-full" alt="" referrerPolicy="no-referrer" />
                     <div>
@@ -2113,14 +2114,14 @@ function UserManager({ contextUser, isPartner }: { contextUser: FirebaseUser, is
                     </div>
                   </div>
                 </td>
-                <td className="px-6 py-4">
+                <td data-label="Funcao Atual" className="px-6 py-4">
                   <span className={`text-[10px] uppercase font-black px-2 py-1 rounded border ${
                     p.role === UserRole.PARTNER ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20' : 'bg-green-500/10 text-green-500 border-green-500/20'
                   }`}>
                     {p.role === UserRole.PARTNER ? 'Sócio' : 'Colaborador'}
                   </span>
                 </td>
-                <td className="px-6 py-4 text-right">
+                <td data-label="Acoes" className="px-6 py-4 text-right">
                   {p.uid !== contextUser.uid ? (
                     <button 
                       onClick={() => toggleRole(p)}
@@ -4256,6 +4257,140 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
     return [...allProductItems, virtualItem];
   };
 
+  const handleLinkEditorToProductionItem = async (item: ScheduleItem, editorId: string) => {
+    if (!editorId) return;
+
+    const selectedProd = producers.find(p => p.id === editorId);
+    if (!selectedProd) return;
+
+    if (item.id !== 'virtual-draft-item') {
+      await handleAssignRole(item.id, editorId, 'editor');
+    }
+
+    const currentLinked = Array.isArray(selectedProd.linkedProductIds) ? [...selectedProd.linkedProductIds] : [];
+    if (!currentLinked.includes(item.productId)) {
+      currentLinked.push(item.productId);
+      await updateDoc(doc(db, 'producers', selectedProd.id), {
+        linkedProductIds: currentLinked
+      });
+    }
+
+    setActiveProducerId(editorId);
+  };
+
+  const renderEditorLinkSelect = (item: ScheduleItem, className = '') => {
+    if (item.producerId) {
+      const linkedEditor = producers.find(p => p.id === item.producerId);
+      return (
+        <p className={`text-[10px] text-gray-500 font-black uppercase tracking-wider ${className}`}>
+          Editor vinculado: <span className="text-gray-300">{linkedEditor?.name || 'Editor Geral'}</span>
+        </p>
+      );
+    }
+
+    return (
+      <select
+        className={`bg-[#0a0a0a] border border-[#222] rounded-xl px-3 py-2 text-[10px] font-black uppercase text-gray-400 cursor-pointer focus:border-orange-500 outline-none w-full ${className}`}
+        onChange={(e) => handleLinkEditorToProductionItem(item, e.target.value)}
+        value=""
+      >
+        <option value="">Vincular Editor...</option>
+        {producers
+          .filter(p => !p.hidden && (p.role === 'editor' || !p.role))
+          .map(p => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+      </select>
+    );
+  };
+
+  const renderSupplierUploadBox = (
+    item: ScheduleItem,
+    type: 'audio' | 'video',
+    files: any[],
+    canUploadSupplierMaterial: boolean,
+    supplierUploadBlockTitle: string
+  ) => {
+    const isAudio = type === 'audio';
+    const Icon = isAudio ? Music : Video;
+    const colorClass = isAudio ? 'text-blue-400' : 'text-purple-400';
+    const hoverClass = isAudio ? 'hover:border-blue-500/50 hover:bg-blue-500/5' : 'hover:border-purple-500/50 hover:bg-purple-500/5';
+    const label = isAudio ? 'Base de Audio' : 'Materiais Brutos';
+    const uploadLabel = isAudio ? 'Carregar Audio' : 'Carregar Brutos';
+
+    return (
+      <div className="bg-[#111] p-4 rounded-2xl border border-[#222]/80 space-y-3 min-w-0">
+        <div className="flex items-start justify-between gap-3">
+          <span className={`text-[11px] font-black uppercase tracking-wider ${colorClass} flex items-center gap-1.5 min-w-0`}>
+            <Icon className="w-3.5 h-3.5 shrink-0" /> <span className="break-words">{label}</span>
+          </span>
+          <span className="text-[10px] font-bold text-gray-500 shrink-0">
+            {files.length} {files.length === 1 ? 'arquivo' : 'arquivos'}
+          </span>
+        </div>
+
+        <button
+          onClick={() => {
+            setActiveUploadContext({ id: item.id, type });
+            (isAudio ? audioInputRef : videoInputRef).current?.click();
+          }}
+          disabled={!canUploadSupplierMaterial || (uploadingItem?.id === item.id && uploadingItem?.type === type)}
+          title={!canUploadSupplierMaterial ? supplierUploadBlockTitle : uploadLabel}
+          className={`w-full min-h-12 py-3.5 px-4 rounded-xl border border-dashed border-[#333] bg-[#0a0a0a] text-[11px] font-black uppercase tracking-widest text-gray-400 hover:text-white flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${hoverClass}`}
+        >
+          {uploadingItem?.id === item.id && uploadingItem?.type === type ? (
+            <>
+              <div className={`w-3.5 h-3.5 border-2 ${isAudio ? 'border-blue-500' : 'border-purple-500'} border-t-transparent rounded-full animate-spin`} />
+              <span>Carregando...</span>
+            </>
+          ) : (
+            <>
+              <CloudUpload className={`w-4 h-4 ${isAudio ? 'text-blue-500' : 'text-purple-500'}`} />
+              <span>{uploadLabel}</span>
+            </>
+          )}
+        </button>
+
+        {files.length > 0 && (
+          <div className="flex flex-col gap-1.5 mt-1 max-h-36 overflow-y-auto">
+            {files.map((file: any, idx: number) => {
+              const url = typeof file === 'string' ? file : file.url;
+              const name = typeof file === 'string' ? `${isAudio ? 'Audio' : 'Bruto'} #${idx + 1}` : (file.name || `${isAudio ? 'Audio' : 'Bruto'} #${idx + 1}`);
+              return (
+                <div key={idx} className={`flex items-center justify-between gap-2 bg-[#0d0d0d] border border-[#1a1a1a] px-3 py-2 rounded-xl text-xs ${isAudio ? 'text-blue-400/90 hover:text-blue-400 hover:border-blue-500/20' : 'text-purple-400/90 hover:text-purple-400 hover:border-purple-500/20'} transition-all min-w-0`}>
+                  <a href={url} target="_blank" rel="noreferrer" className="truncate font-semibold hover:underline flex-1 min-w-0" title={name}>
+                    {name}
+                  </a>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => setActivePreviewVideo({ url, name, type })}
+                      className={`p-1 ${isAudio ? 'hover:bg-blue-500/10' : 'hover:bg-purple-500/10'} rounded transition-colors cursor-pointer`}
+                      title="Reproduzir"
+                    >
+                      <Play className="w-3.5 h-3.5" />
+                    </button>
+                    <a href={url} target="_blank" rel="noreferrer" className={`p-1 ${isAudio ? 'hover:bg-blue-500/10' : 'hover:bg-purple-500/10'} rounded transition-colors`} title="Baixar">
+                      <Download className="w-3.5 h-3.5" />
+                    </a>
+                    <button
+                      onClick={() => handleDeleteAsset(item, type, url)}
+                      className="p-1 hover:bg-red-500/10 rounded text-red-500 transition-colors cursor-pointer"
+                      title="Apagar"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-8">
       {/* Header with Navigation */}
@@ -4340,50 +4475,6 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
           </button>
         )}
 
-        {subView === 'line' && activeProductId && activeProducerId === 'unassigned' && (
-          <div className="flex items-center gap-2.5 bg-[#141414] border border-[#222] rounded-2xl px-4 py-2.5">
-            <span className="text-[10px] font-black uppercase tracking-wider text-gray-500">Vincular Editor:</span>
-            <select 
-              className="bg-[#0a0a0a] border border-[#222] rounded-xl px-3 py-1.5 text-xs font-black uppercase tracking-wider text-gray-450 cursor-pointer focus:border-orange-500 outline-none hover:bg-[#111] transition-all"
-              onChange={async (e) => {
-                const selectedEditorId = e.target.value;
-                if (!selectedEditorId) return;
-
-                const selectedProducer = producers.find(p => p.id === selectedEditorId);
-                if (!selectedProducer) return;
-
-                try {
-                  const targetItems = pendingProduction.filter(s => !s.producerId && s.productId === activeProductId);
-                  for (const item of targetItems) {
-                    await handleAssignRole(item.id, selectedEditorId, 'editor');
-                  }
-
-                  const currentLinked = Array.isArray(selectedProducer.linkedProductIds) ? [...selectedProducer.linkedProductIds] : [];
-                  if (!currentLinked.includes(activeProductId)) {
-                    currentLinked.push(activeProductId);
-                    await updateDoc(doc(db, 'producers', selectedProducer.id), {
-                      linkedProductIds: currentLinked
-                    });
-                  }
-
-                  setActiveProducerId(selectedEditorId);
-                } catch (err) {
-                  console.error("Erro ao vincular editor:", err);
-                }
-              }}
-              value=""
-            >
-              <option value="">Selecione...</option>
-              {producers
-                .filter(p => !p.hidden && (p.role === 'editor' || !p.role))
-                .map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-            </select>
-          </div>
-        )}
       </div>
 
       <AnimatePresence mode="wait">
@@ -4521,149 +4612,192 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                     />
                   </div>
                 )}
-                {userRole === 'editor' && (
-                  <div className="md:hidden space-y-4">
-                    {(() => {
-                      const displayedItems = getVisibleProductionItems();
+                <div className="md:hidden space-y-4">
+                  {(() => {
+                    const displayedItems = getVisibleProductionItems();
 
-                      if (displayedItems.length === 0) {
-                        return (
-                          <div className="bg-[#141414] border border-[#222] rounded-3xl px-5 py-10 text-center">
-                            <p className="text-sm font-black text-white uppercase tracking-widest">Nenhum material pendente</p>
-                            <p className="text-xs text-gray-500 leading-relaxed mt-2">
-                              Este produto continua vinculado a voce. Quando novos materiais chegarem, eles aparecerao aqui; o historico permanece disponivel no Cofre de Conteudos abaixo.
-                            </p>
-                          </div>
-                        );
-                      }
+                    if (displayedItems.length === 0) {
+                      return (
+                        <div className="bg-[#141414] border border-[#222] rounded-3xl px-5 py-10 text-center">
+                          <p className="text-sm font-black text-white uppercase tracking-widest">Nenhum material pendente</p>
+                          <p className="text-xs text-gray-500 leading-relaxed mt-2">
+                            Este produto continua vinculado a voce. Quando novos materiais chegarem, eles aparecerao aqui; o historico permanece disponivel no Cofre de Conteudos abaixo.
+                          </p>
+                        </div>
+                      );
+                    }
 
-                      return displayedItems.map(item => {
-                        const acc = accounts.find(a => a.id === item.accountId);
-                        const audios = Array.isArray(item.audioMaterial) ? item.audioMaterial : (item.audioMaterial ? [item.audioMaterial] : []);
-                        const videos = Array.isArray(item.videoMaterial) ? item.videoMaterial : (item.videoMaterial ? [item.videoMaterial] : []);
-                        const finishedVideos = Array.isArray(item.finishedVideoUrl) ? item.finishedVideoUrl : (item.finishedVideoUrl ? [item.finishedVideoUrl] : []);
-                        const hasFinished = finishedVideos.length > 0;
+                    return displayedItems.map(item => {
+                      const acc = accounts.find(a => a.id === item.accountId);
+                      const audios = Array.isArray(item.audioMaterial) ? item.audioMaterial : (item.audioMaterial ? [item.audioMaterial] : []);
+                      const videos = Array.isArray(item.videoMaterial) ? item.videoMaterial : (item.videoMaterial ? [item.videoMaterial] : []);
+                      const finishedVideos = Array.isArray(item.finishedVideoUrl) ? item.finishedVideoUrl : (item.finishedVideoUrl ? [item.finishedVideoUrl] : []);
+                      const hasFinished = finishedVideos.length > 0;
+                      const supplierUploadBlockMessages = userRole === 'supplier'
+                        ? getSupplierUploadBlockMessages(
+                            !!item.creatorLinkId || !!activePendingReferenceLink,
+                            item.id === 'virtual-draft-item'
+                              ? !!activeProducerId && activeProducerId !== 'unassigned'
+                              : !!item.producerId
+                          )
+                        : [];
+                      const canUploadSupplierMaterial = userRole !== 'supplier' || supplierUploadBlockMessages.length === 0;
+                      const supplierUploadBlockTitle = supplierUploadBlockMessages.join(' | ');
 
-                        return (
-                          <div key={item.id} className="bg-[#141414] border border-[#222] rounded-3xl p-5 space-y-5">
-                            <div className="flex items-start gap-3">
-                              <div className="w-11 h-11 bg-[#0a0a0a] rounded-xl flex items-center justify-center border border-[#222] overflow-hidden shrink-0">
-                                {acc?.imageUrl ? <img src={acc.imageUrl} className="w-full h-full object-cover" alt="" /> : <Monitor className="w-4 h-4 text-gray-600" />}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-sm font-black text-white leading-tight">
-                                  {(item.dailyIndex && hasAnyMaterial(item)) ? `${String(item.dailyIndex).padStart(3, '0')} - ` : ''}{currentProduct?.name}
-                                </p>
-                                <p className="text-[10px] text-gray-500 font-bold uppercase mt-1">{acc?.name || 'Sem Conta'}</p>
-                              </div>
+                      return (
+                        <div key={item.id} className="bg-[#141414] border border-[#222] rounded-3xl p-4 min-[360px]:p-5 space-y-5 overflow-hidden">
+                          <div className="flex items-start gap-3 min-w-0">
+                            <div className="w-11 h-11 bg-[#0a0a0a] rounded-xl flex items-center justify-center border border-[#222] overflow-hidden shrink-0">
+                              {acc?.imageUrl ? <img src={acc.imageUrl} className="w-full h-full object-cover" alt="" /> : <Monitor className="w-4 h-4 text-gray-600" />}
                             </div>
-
-                            <div className="space-y-3">
-                              <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Materiais brutos</p>
-                              {audios.length === 0 && videos.length === 0 ? (
-                                <p className="text-xs text-gray-600 italic">Nenhum material</p>
-                              ) : (
-                                <div className="space-y-2">
-                                  {audios.map((file: any, idx: number) => {
-                                    const url = typeof file === 'string' ? file : file.url;
-                                    const name = typeof file === 'string' ? `Audio #${idx + 1}` : (file.name || `Audio #${idx + 1}`);
-                                    return (
-                                      <a
-                                        key={`mobile-audio-${idx}`}
-                                        href={url}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="flex items-center gap-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 px-3 py-3 rounded-2xl text-xs font-bold transition-all w-full min-w-0"
-                                        title={name}
-                                      >
-                                        <Music className="w-4 h-4 shrink-0" />
-                                        <span className="truncate flex-1 text-left">{name}</span>
-                                        <Download className="w-4 h-4 shrink-0 text-gray-400" />
-                                      </a>
-                                    );
-                                  })}
-                                  {videos.map((file: any, idx: number) => {
-                                    const url = typeof file === 'string' ? file : file.url;
-                                    const name = typeof file === 'string' ? `Bruto #${idx + 1}` : (file.name || `Bruto #${idx + 1}`);
-                                    return (
-                                      <a
-                                        key={`mobile-video-${idx}`}
-                                        href={url}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="flex items-center gap-2 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 px-3 py-3 rounded-2xl text-xs font-bold transition-all w-full min-w-0"
-                                        title={name}
-                                      >
-                                        <Video className="w-4 h-4 shrink-0" />
-                                        <span className="truncate flex-1 text-left">{name}</span>
-                                        <Download className="w-4 h-4 shrink-0 text-gray-400" />
-                                      </a>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="space-y-3">
-                              <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Video final</p>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <button
-                                  onClick={() => {
-                                    setActiveUploadContext({ id: item.id, type: 'finished' });
-                                    finishedInputRef.current?.click();
-                                  }}
-                                  disabled={uploadingItem?.id === item.id}
-                                  className={`flex-1 min-w-[160px] justify-center px-4 py-3 rounded-2xl border flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all ${
-                                    hasFinished
-                                      ? 'bg-green-500/10 border-green-500/30 text-green-500 hover:bg-green-500/20'
-                                      : 'bg-orange-500/10 border-orange-500/30 text-orange-500 hover:bg-orange-500/20'
-                                  } ${uploadingItem?.id === item.id ? 'opacity-50 cursor-wait' : ''}`}
-                                >
-                                  {uploadingItem?.id === item.id && uploadingItem?.type === 'finished' ? (
-                                    <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                  ) : (
-                                    <CloudUpload className="w-3 h-3" />
-                                  )}
-                                  {uploadingItem?.id === item.id && uploadingItem?.type === 'finished' ? 'Carregando...' : (hasFinished ? 'Atualizar' : 'Enviar Vídeo')}
-                                </button>
-
-                                {hasFinished && !uploadingItem && (
-                                  <>
-                                    <button
-                                      onClick={() => {
-                                        const file = finishedVideos[0] as any;
-                                        const url = typeof file === 'string' ? file : file.url;
-                                        const name = typeof file === 'string' ? 'Video pronto' : (file.name || 'Video pronto');
-                                        setActivePreviewVideo({ url, name, type: 'video' });
-                                      }}
-                                      className="p-3 bg-[#0a0a0a] border border-[#222] rounded-2xl text-green-500 hover:text-green-400"
-                                      title="Reproduzir video pronto"
-                                    >
-                                      <Play className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                      onClick={() => {
-                                        const file = finishedVideos[0] as any;
-                                        const url = typeof file === 'string' ? file : file.url;
-                                        handleDeleteAsset(item, 'finished', url);
-                                      }}
-                                      className="p-3 bg-[#0a0a0a] border border-[#222] rounded-2xl text-red-500 hover:text-red-400"
-                                      title="Excluir video pronto"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  </>
+                            <div className="min-w-0 flex-1 space-y-2">
+                              <p className="text-sm font-black text-white leading-tight break-words">
+                                {(item.dailyIndex && hasAnyMaterial(item)) ? `${String(item.dailyIndex).padStart(3, '0')} - ` : ''}{currentProduct?.name}
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {userRole === 'supplier' && isSupplierDone(item) && (
+                                  <span className="inline-flex items-center gap-1 bg-green-500/15 text-green-400 border border-green-500/20 px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider">
+                                    <Check className="w-2.5 h-2.5" /> Concluido
+                                  </span>
+                                )}
+                                {userRole === 'supplier' && !isSupplierDone(item) && (
+                                  <span className="inline-flex items-center gap-1 bg-orange-500/15 text-orange-400 border border-orange-500/20 px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider">
+                                    Pendente
+                                  </span>
+                                )}
+                                {userRole !== 'supplier' && (
+                                  <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-full border ${
+                                    item.status === ScheduleStatus.PRODUCED
+                                      ? 'bg-green-500/10 text-green-500 border-green-500/20'
+                                      : 'bg-orange-500/10 text-orange-500 border-orange-500/20'
+                                  }`}>
+                                    {item.status}
+                                  </span>
                                 )}
                               </div>
                             </div>
                           </div>
-                        );
-                      });
-                    })()}
-                  </div>
-                )}
 
-                <div className={`${userRole === 'editor' ? 'hidden md:block' : ''} bg-[#141414] border border-[#222] rounded-[2.5rem] overflow-hidden`}>
+                          <div className="grid grid-cols-1 gap-3">
+                            <div className="bg-[#0d0d0d] border border-[#222] rounded-2xl p-3 min-w-0">
+                              <p className="text-[9px] font-black uppercase tracking-widest text-gray-600 mb-1">Conta</p>
+                              <p className="text-xs text-gray-300 font-bold uppercase break-words">{acc?.name || 'Sem Conta'}</p>
+                            </div>
+                            <div className="bg-[#0d0d0d] border border-[#222] rounded-2xl p-3 min-w-0">
+                              <p className="text-[9px] font-black uppercase tracking-widest text-gray-600 mb-2">Editor Vinculado</p>
+                              {renderEditorLinkSelect(item)}
+                            </div>
+                          </div>
+
+                          {userRole === 'supplier' ? (
+                            <div className="space-y-3 min-w-0">
+                              {renderSupplierUploadBox(item, 'audio', audios, canUploadSupplierMaterial, supplierUploadBlockTitle)}
+                              {renderSupplierUploadBox(item, 'video', videos, canUploadSupplierMaterial, supplierUploadBlockTitle)}
+                              {!canUploadSupplierMaterial && (
+                                <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-300 rounded-2xl p-3 text-[11px] font-bold leading-relaxed space-y-1">
+                                  {supplierUploadBlockMessages.map(message => (
+                                    <div key={message}>{message}</div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <>
+                              <div className="space-y-3 min-w-0">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Materiais brutos</p>
+                                {audios.length === 0 && videos.length === 0 ? (
+                                  <p className="text-xs text-gray-600 italic">Nenhum material</p>
+                                ) : (
+                                  <div className="space-y-2">
+                                    {audios.map((file: any, idx: number) => {
+                                      const url = typeof file === 'string' ? file : file.url;
+                                      const name = typeof file === 'string' ? `Audio #${idx + 1}` : (file.name || `Audio #${idx + 1}`);
+                                      return (
+                                        <a key={`mobile-audio-${idx}`} href={url} target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 px-3 py-3 rounded-2xl text-xs font-bold transition-all w-full min-w-0" title={name}>
+                                          <Music className="w-4 h-4 shrink-0" />
+                                          <span className="truncate flex-1 text-left min-w-0">{name}</span>
+                                          <Download className="w-4 h-4 shrink-0 text-gray-400" />
+                                        </a>
+                                      );
+                                    })}
+                                    {videos.map((file: any, idx: number) => {
+                                      const url = typeof file === 'string' ? file : file.url;
+                                      const name = typeof file === 'string' ? `Bruto #${idx + 1}` : (file.name || `Bruto #${idx + 1}`);
+                                      return (
+                                        <a key={`mobile-video-${idx}`} href={url} target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 px-3 py-3 rounded-2xl text-xs font-bold transition-all w-full min-w-0" title={name}>
+                                          <Video className="w-4 h-4 shrink-0" />
+                                          <span className="truncate flex-1 text-left min-w-0">{name}</span>
+                                          <Download className="w-4 h-4 shrink-0 text-gray-400" />
+                                        </a>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="space-y-3">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Video final</p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <button
+                                    onClick={() => {
+                                      setActiveUploadContext({ id: item.id, type: 'finished' });
+                                      finishedInputRef.current?.click();
+                                    }}
+                                    disabled={uploadingItem?.id === item.id}
+                                    className={`flex-1 min-w-[170px] min-h-12 justify-center px-4 py-3 rounded-2xl border flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all ${
+                                      hasFinished
+                                        ? 'bg-green-500/10 border-green-500/30 text-green-500 hover:bg-green-500/20'
+                                        : 'bg-orange-500/10 border-orange-500/30 text-orange-500 hover:bg-orange-500/20'
+                                    } ${uploadingItem?.id === item.id ? 'opacity-50 cursor-wait' : ''}`}
+                                  >
+                                    {uploadingItem?.id === item.id && uploadingItem?.type === 'finished' ? (
+                                      <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                    ) : (
+                                      <CloudUpload className="w-3 h-3" />
+                                    )}
+                                    {uploadingItem?.id === item.id && uploadingItem?.type === 'finished' ? 'Carregando...' : (hasFinished ? 'Atualizar' : 'Enviar Video')}
+                                  </button>
+
+                                  {hasFinished && !uploadingItem && (
+                                    <>
+                                      <button
+                                        onClick={() => {
+                                          const file = finishedVideos[0] as any;
+                                          const url = typeof file === 'string' ? file : file.url;
+                                          const name = typeof file === 'string' ? 'Video pronto' : (file.name || 'Video pronto');
+                                          setActivePreviewVideo({ url, name, type: 'video' });
+                                        }}
+                                        className="p-3 bg-[#0a0a0a] border border-[#222] rounded-2xl text-green-500 hover:text-green-400"
+                                        title="Reproduzir video pronto"
+                                      >
+                                        <Play className="w-4 h-4" />
+                                      </button>
+                                      {userRole === 'editor' && (
+                                        <button
+                                          onClick={() => {
+                                            const file = finishedVideos[0] as any;
+                                            const url = typeof file === 'string' ? file : file.url;
+                                            handleDeleteAsset(item, 'finished', url);
+                                          }}
+                                          className="p-3 bg-[#0a0a0a] border border-[#222] rounded-2xl text-red-500 hover:text-red-400"
+                                          title="Excluir video pronto"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+
+                <div className="hidden md:block bg-[#141414] border border-[#222] rounded-[2.5rem] overflow-hidden">
                 <table className="w-full text-left">
                   <thead>
                     <tr className="border-b border-[#222] bg-[#1a1a1a]/50">
@@ -4716,7 +4850,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
 
                         return (
                           <tr key={item.id} className="hover:bg-[#1a1a1a]/50 transition-colors">
-                            <td className="px-6 py-4">
+                            <td data-label="Item" className="px-6 py-4">
                               <div className="flex items-center gap-3">
                                  <div className="w-10 h-10 bg-[#0a0a0a] rounded-xl flex items-center justify-center border border-[#222]">
                                    {acc?.imageUrl ? <img src={acc.imageUrl} className="w-full h-full object-cover rounded-xl" alt="" /> : <Monitor className="w-4 h-4 text-gray-600" />}
@@ -4738,29 +4872,13 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                      )}
                                    </div>
                                    <p className="text-[10px] text-gray-500 font-bold uppercase mt-0.5">{acc?.name || 'Sem Conta'}</p>
-                                   {(!item.producerId && item.id !== 'virtual-draft-item') && (
-                                     <div className="mt-2 text-left">
-                                       <select 
-                                         className="bg-[#0a0a0a] border border-[#222] rounded-xl px-2.5 py-1.5 text-[10px] font-black uppercase text-gray-400 cursor-pointer focus:border-orange-500 outline-none w-full max-w-[150px]"
-                                         onChange={async (e) => {
-                                           const val = e.target.value;
-                                           if (val) {
-                                             await handleAssignRole(item.id, val, 'editor');
-                                             const selectedProd = producers.find(p => p.id === val);
-                                             if (selectedProd) {
-                                               const currentLinked = Array.isArray(selectedProd.linkedProductIds) ? [...selectedProd.linkedProductIds] : [];
-                                               if (!currentLinked.includes(item.productId)) {
-                                                 currentLinked.push(item.productId);
-                                                 await updateDoc(doc(db, 'producers', selectedProd.id), {
-                                                   linkedProductIds: currentLinked
-                                                 });
-                                               }
-                                             }
-                                             setActiveProducerId(val);
-                                           }
-                                         }}
-                                         value=""
-                                       >
+                                    {!item.producerId && (
+                                      <div className="mt-2 text-left">
+                                        <select 
+                                          className="bg-[#0a0a0a] border border-[#222] rounded-xl px-2.5 py-1.5 text-[10px] font-black uppercase text-gray-400 cursor-pointer focus:border-orange-500 outline-none w-full max-w-[150px]"
+                                          onChange={(e) => handleLinkEditorToProductionItem(item, e.target.value)}
+                                          value=""
+                                        >
                                          <option value="">Vincular Editor...</option>
                                          {producers
                                            .filter(p => !p.hidden && (p.role === 'editor' || !p.role))
@@ -4775,7 +4893,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                  </div>
                               </div>
                             </td>
-                            <td className="px-6 py-4">
+                            <td data-label="Materiais Brutos" className="px-6 py-4">
                               {userRole === 'supplier' ? (
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-2">
                                   {/* AUDIO COLUMN */}
@@ -5029,7 +5147,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                             </td>
                             {userRole !== 'supplier' && (
                               <>
-                                <td className="px-6 py-4">
+                                <td data-label="Video Final" className="px-6 py-4">
                                    <div className="flex items-center justify-center gap-2">
                                      <button 
                                        onClick={() => {
@@ -5082,7 +5200,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                    </div>
                                 </td>
                                 {userRole !== 'editor' && (
-                                  <td className="px-6 py-4 text-right">
+                                  <td data-label="Status" className="px-6 py-4 text-right">
                                      <span className={`text-[9px] font-black uppercase px-3 py-1 rounded-full border ${
                                        item.status === ScheduleStatus.PRODUCED 
                                          ? 'bg-green-500/10 text-green-500 border-green-500/20' 
@@ -5386,7 +5504,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
 
                     return (
                       <tr key={idx} className="hover:bg-[#1a1a1a]/50 transition-colors">
-                        <td className="px-6 py-4">
+                        <td data-label="Produto / Data" className="px-6 py-4">
                           <div>
                             <p className="text-sm font-bold text-white">{asset.productName}</p>
                             <p className="text-[10px] text-gray-500 font-bold uppercase mt-0.5">
@@ -5394,12 +5512,12 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                             </p>
                           </div>
                         </td>
-                        <td className="px-6 py-4">
+                        <td data-label="Tipo" className="px-6 py-4">
                           <span className={`text-[9px] font-black uppercase px-2.5 py-1 rounded-full border ${typeInfo.color}`}>
                             {typeInfo.label}
                           </span>
                         </td>
-                        <td className="px-6 py-4 max-w-xs truncate">
+                        <td data-label="Arquivo" className="px-6 py-4 max-w-xs truncate">
                           <a 
                             href={asset.url} 
                             target="_blank" 
@@ -5410,7 +5528,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                             {asset.name}
                           </a>
                         </td>
-                        <td className="px-6 py-4 text-right">
+                        <td data-label="Acoes" className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
                             <a 
                               href={asset.url} 
@@ -9314,34 +9432,34 @@ const handle = resolveCreatorHandle(
             <tbody className="divide-y divide-[#222]">
               {sales.sort((a,b) => b.date.localeCompare(a.date)).map(sale => (
                 <tr key={sale.id} className="hover:bg-[#1a1a1a] transition-colors group">
-                  <td className="px-6 py-4">
+                  <td data-label="Data" className="px-6 py-4">
                     <span className="text-sm text-gray-400">{sale.date}</span>
                   </td>
-                  <td className="px-6 py-4">
+                  <td data-label="Produto" className="px-6 py-4">
                     <div className="flex items-center gap-2">
                        <span className="text-sm font-bold text-white">{products.find(p => p.id === sale.productId)?.name || 'Removido'}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4">
+                  <td data-label="Conta" className="px-6 py-4">
                     <div className="flex items-center gap-2">
                        <Monitor className="w-3 h-3 text-gray-500" />
                        <span className="text-sm text-gray-400">{accounts.find(a => a.id === sale.accountId)?.name || 'Removido'}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-center">
+                  <td data-label="Quantidade" className="px-6 py-4 text-center">
                     <span className="text-sm font-mono text-white">{sale.quantity}</span>
                   </td>
-                  <td className="px-6 py-4 text-right">
+                  <td data-label="GMV" className="px-6 py-4 text-right">
                     <span className="text-sm font-mono text-white">
                       <ProtectedValue prefix="R$ " value={sale.gmv.toFixed(2)} />
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-right">
+                  <td data-label="Comissao" className="px-6 py-4 text-right">
                     <span className="text-sm font-mono text-green-500 font-bold">
                       <ProtectedValue prefix="R$ " value={sale.commission.toFixed(2)} />
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-right">
+                  <td data-label="Acoes" className="px-6 py-4 text-right">
                     <button 
                       onClick={() => handleDelete(sale.id)}
                       className="p-2 text-gray-600 hover:text-red-500 transition-colors md:opacity-0 md:group-hover:opacity-100"
@@ -9662,7 +9780,7 @@ const creators = useMemo(() => {
             <tbody className="divide-y divide-[#222]">
               {filteredCreators.map(creator => (
                 <tr key={creator.handle} className="hover:bg-[#1c1c1c]/40 transition-colors">
-                  <td className="px-6 py-5">
+                  <td data-label="Criador" className="px-6 py-5">
                     <a 
                       href={`https://www.tiktok.com/${creator.handle}`} 
                       target="_blank" 
@@ -9673,19 +9791,19 @@ const creators = useMemo(() => {
                       <ExternalLink className="w-3 h-3 text-gray-600" />
                     </a>
                   </td>
-                  <td className="px-6 py-5 font-mono text-gray-400">
+                  <td data-label="Videos Ativos" className="px-6 py-5 font-mono text-gray-400">
                     {creator.linksCount}
                   </td>
-                  <td className="px-6 py-5 font-bold font-mono text-emerald-500">
+                  <td data-label="Qtd Vendas" className="px-6 py-5 font-bold font-mono text-emerald-500">
                     {creator.totalQty}
                   </td>
-                  <td className="px-6 py-5 font-bold font-mono text-white">
+                  <td data-label="GMV Gerado" className="px-6 py-5 font-bold font-mono text-white">
                     <ProtectedValue prefix="R$ " value={creator.totalGmv.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} />
                   </td>
-                  <td className="px-6 py-5 font-bold font-mono text-gray-400">
+                  <td data-label="Comissao Proprietario" className="px-6 py-5 font-bold font-mono text-gray-400">
                     <ProtectedValue prefix="R$ " value={creator.totalCommission.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} />
                   </td>
-                  <td className="px-6 py-5 text-right">
+                  <td data-label="Acoes" className="px-6 py-5 text-right">
                     <button
                       onClick={() => setSelectedCreator(selectedCreator?.handle === creator.handle ? null : creator)}
                       className="text-xs bg-[#222] hover:bg-[#333] text-gray-300 px-3.5 py-1.5 rounded-xl transition-all cursor-pointer font-bold uppercase tracking-wider"
