@@ -168,6 +168,250 @@ function isProducerLinkedToUser(producer: Producer, user: FirebaseUser): boolean
   return linkedId === user.uid || (!!linkedEmail && linkedEmail.toLowerCase() === user.email?.toLowerCase());
 }
 
+const compliancePages = {
+  '/privacy-policy': {
+    title: 'Privacy Policy – Influency Club',
+    heading: 'Privacy Policy',
+    description: 'Learn how Influency Club collects, processes, and protects personal information for TikTok Shop workflows.',
+    sections: [
+      {
+        paragraphs: [
+          'Influency Club respects user privacy and is committed to protecting personal information.',
+          'The application collects and processes only the data required to provide TikTok Shop integration, account management, production workflow, content organization, user roles, and operational functionality.'
+        ]
+      },
+      {
+        heading: 'Data We May Process',
+        list: [
+          'user name and email from Google Authentication',
+          'user role and permission level',
+          'collaborator/editor/supplier assignment data',
+          'product and production workflow data',
+          'uploaded production files',
+          'TikTok Shop authorization and integration data, when enabled'
+        ]
+      },
+      {
+        paragraphs: [
+          'We do not sell personal information to third parties.',
+          'Data is processed securely using encrypted connections and trusted cloud infrastructure providers, including Firebase, Firestore, Google Authentication, and Render.',
+          'Access to information is restricted by user role. Users only access the data required for their operational function.'
+        ]
+      },
+      {
+        heading: 'Data Requests',
+        paragraphs: ['Users may request deletion of their data or revoke access at any time by contacting:']
+      }
+    ]
+  },
+  '/terms-of-service': {
+    title: 'Terms of Service – Influency Club',
+    heading: 'Terms of Service',
+    description: 'Review the terms for authorized use of the Influency Club operational workflow application.',
+    sections: [
+      {
+        paragraphs: [
+          'Influency Club is an internal operational tool for managing TikTok Shop content workflows, creators, editors, suppliers, products, and publication processes.',
+          'By using this application, users agree to use it only for authorized business purposes.',
+          'Users must not upload illegal, harmful, or unauthorized content.',
+          'Users are responsible for ensuring that uploaded files, links, and production materials comply with applicable laws and platform policies.',
+          'Influency Club may update or restrict access to protect system security, user data, or operational integrity.',
+          'For questions, contact:'
+        ]
+      }
+    ]
+  },
+  '/security': {
+    title: 'Data Security – Influency Club',
+    heading: 'Data Security',
+    description: 'Understand the administrative, technical, and operational safeguards used by Influency Club.',
+    sections: [
+      {
+        paragraphs: [
+          'Influency Club applies reasonable administrative, technical, and operational safeguards to protect user and business data.'
+        ]
+      },
+      {
+        heading: 'Security Practices',
+        list: [
+          'Google Authentication for user login',
+          'role-based access control',
+          'restricted access by account type',
+          'encrypted HTTPS connections',
+          'Firebase/Firestore security rules',
+          'separation between editor, supplier, and partner roles',
+          'limited data access based on operational need',
+          'no sale of personal data',
+          'deletion or access revocation available upon request'
+        ]
+      },
+      {
+        paragraphs: [
+          'Only authorized users may access internal production data.',
+          'For security or data protection requests, contact:'
+        ]
+      }
+    ]
+  },
+  '/data-deletion': {
+    title: 'Data Deletion Request – Influency Club',
+    heading: 'Data Deletion Request',
+    description: 'Request deletion of personal data, account association, authorization records, or access records.',
+    sections: [
+      {
+        paragraphs: [
+          'Users may request deletion of their personal data, account association, authorization records, or operational access records.',
+          'To request deletion, contact:'
+        ]
+      },
+      {
+        heading: 'Please Include',
+        list: [
+          'your name',
+          'your account email',
+          'the type of data you want deleted',
+          'the reason for the request, if applicable'
+        ]
+      },
+      {
+        paragraphs: [
+          'Requests will be reviewed and processed within a reasonable period.',
+          'When possible, access may also be revoked by disconnecting the authorization from the connected platform.'
+        ]
+      }
+    ]
+  }
+} as const;
+
+type CompliancePath = keyof typeof compliancePages;
+type CompliancePageConfig = typeof compliancePages[CompliancePath];
+
+const complianceLinks = [
+  { path: '/privacy-policy', label: 'Privacy Policy' },
+  { path: '/terms-of-service', label: 'Terms of Service' },
+  { path: '/security', label: 'Data Security' },
+  { path: '/data-deletion', label: 'Data Deletion' }
+] as const;
+
+function getCompliancePage(pathname: string): CompliancePageConfig | null {
+  const normalizedPath = pathname.replace(/\/$/, '') || '/';
+  return normalizedPath in compliancePages ? compliancePages[normalizedPath as CompliancePath] : null;
+}
+
+function ComplianceFooter() {
+  return (
+    <footer className="border-t border-[#222] bg-[#090909]">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-5 py-8 text-sm text-gray-500 md:flex-row md:items-center md:justify-between">
+        <p>Influency Club</p>
+        <nav className="flex flex-wrap gap-x-5 gap-y-2">
+          {complianceLinks.map(link => (
+            <a key={link.path} href={link.path} className="hover:text-white transition-colors">
+              {link.label}
+            </a>
+          ))}
+        </nav>
+      </div>
+    </footer>
+  );
+}
+
+function CompliancePage({ page }: { page: CompliancePageConfig }) {
+  useEffect(() => {
+    document.title = page.title;
+    let metaDescription = document.querySelector('meta[name="description"]') as HTMLMetaElement | null;
+    if (!metaDescription) {
+      metaDescription = document.createElement('meta');
+      metaDescription.name = 'description';
+      document.head.appendChild(metaDescription);
+    }
+    metaDescription.content = page.description;
+  }, [page]);
+
+  return (
+    <div className="min-h-screen bg-[#0a0a0a] text-gray-300 flex flex-col">
+      <header className="border-b border-[#222] bg-[#0a0a0a]/90 backdrop-blur-md">
+        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-5 py-5">
+          <a href="/" className="flex items-center gap-3 text-white">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-500 text-black">
+              <Zap className="h-5 w-5" />
+            </span>
+            <span className="font-bold tracking-tight">Influency Club</span>
+          </a>
+          <a href="/" className="hidden text-sm text-gray-500 hover:text-white transition-colors sm:inline">
+            Sign in
+          </a>
+        </div>
+      </header>
+
+      <main className="flex-1">
+        <section className="mx-auto w-full max-w-5xl px-5 py-10 md:py-16">
+          <div className="mb-8 flex flex-col gap-4 border-b border-[#222] pb-8">
+            <p className="text-xs font-black uppercase tracking-widest text-orange-400">Last updated: May 24, 2026</p>
+            <div className="space-y-3">
+              <h1 className="text-3xl font-black tracking-tight text-white md:text-5xl">{page.title}</h1>
+              <p className="max-w-3xl text-base leading-7 text-gray-400">{page.description}</p>
+            </div>
+          </div>
+
+          <div className="grid gap-8 lg:grid-cols-[1fr_260px]">
+            <article className="space-y-8 rounded-2xl border border-[#222] bg-[#111] p-6 shadow-2xl md:p-8">
+              {page.sections.map((section, index) => (
+                <section key={index} className="space-y-4">
+                  {section.heading && <h2 className="text-lg font-bold text-white">{section.heading}</h2>}
+                  {section.paragraphs?.map((paragraph, paragraphIndex) => (
+                    <p key={paragraphIndex} className="text-sm leading-7 text-gray-300">
+                      {paragraph}
+                    </p>
+                  ))}
+                  {section.list && (
+                    <ul className="space-y-3">
+                      {section.list.map(item => (
+                        <li key={item} className="flex gap-3 text-sm leading-6 text-gray-300">
+                          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-orange-400" />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              ))}
+
+              <a
+                href="mailto:mayconbussines12@gmail.com"
+                className="inline-flex max-w-full items-center gap-2 rounded-xl border border-orange-500/25 bg-orange-500/10 px-4 py-3 text-sm font-semibold text-orange-200 hover:bg-orange-500/15 transition-colors break-all"
+              >
+                mayconbussines12@gmail.com
+                <ExternalLink className="h-4 w-4 shrink-0" />
+              </a>
+            </article>
+
+            <aside className="space-y-3">
+              <p className="text-xs font-black uppercase tracking-widest text-gray-600">Compliance Pages</p>
+              <nav className="rounded-2xl border border-[#222] bg-[#111] p-2">
+                {complianceLinks.map(link => {
+                  const isActive = page.title.startsWith(link.label);
+                  return (
+                    <a
+                      key={link.path}
+                      href={link.path}
+                      className={`flex items-center justify-between rounded-xl px-4 py-3 text-sm transition-colors ${isActive ? 'bg-white text-black font-bold' : 'text-gray-400 hover:bg-[#1a1a1a] hover:text-white'}`}
+                    >
+                      {link.label}
+                      <ChevronRight className="h-4 w-4" />
+                    </a>
+                  );
+                })}
+              </nav>
+            </aside>
+          </div>
+        </section>
+      </main>
+
+      <ComplianceFooter />
+    </div>
+  );
+}
+
 const Login = ({ onBack, onLoginSuccess }: { onBack: () => void, onLoginSuccess: (token: string) => void }) => {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -235,6 +479,13 @@ const Login = ({ onBack, onLoginSuccess }: { onBack: () => void, onLoginSuccess:
             {loginError}
           </div>
         )}
+        <nav className="mt-8 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 border-t border-[#222] pt-5 text-[11px] text-gray-500">
+          {complianceLinks.map(link => (
+            <a key={link.path} href={link.path} className="hover:text-white transition-colors">
+              {link.label}
+            </a>
+          ))}
+        </nav>
       </motion.div>
     </div>
   );
@@ -297,6 +548,13 @@ const LayerSelection = ({ onSelect, userEmail }: { onSelect: (mode: ViewMode) =>
             <LogOut className="w-4 h-4" />
             Sair da conta
           </button>
+          <nav className="mt-6 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[11px] text-gray-600">
+            {complianceLinks.map(link => (
+              <a key={link.path} href={link.path} className="hover:text-white transition-colors">
+                {link.label}
+              </a>
+            ))}
+          </nav>
         </div>
       </div>
     </div>
@@ -979,6 +1237,9 @@ export default function App() {
       handleFirestoreError(e, OperationType.CREATE, 'completed_suggestions');
     }
   };
+
+  const publicCompliancePage = getCompliancePage(window.location.pathname);
+  if (publicCompliancePage) return <CompliancePage page={publicCompliancePage} />;
 
   if (error) return (
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-4">
@@ -3500,6 +3761,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
   const [activePreviewVideo, setActivePreviewVideo] = useState<{ url: string; name: string; type?: 'audio' | 'video' } | null>(null);
   const [newItemData, setNewItemData] = useState({ accountId: '', productId: '', producerId: '', supplierId: '' });
   const [pendingReferenceLink, setPendingReferenceLink] = useState<TiktokLink | null>(null);
+  const [productionEditorSelections, setProductionEditorSelections] = useState<Record<string, string>>({});
 
   // Library States
   const [libraryTypeFilter, setLibraryTypeFilter] = useState<'all' | 'audio' | 'video' | 'finished'>('all');
@@ -3759,7 +4021,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
       let referenceLinkToConsume = shouldRequireReference ? activePendingReferenceLink : null;
 
       if (itemId === 'virtual-draft-item') {
-        const selectedEditorId = activeProducerId === 'unassigned' ? '' : (activeProducerId || '');
+        const selectedEditorId = productionEditorSelections[itemId] || (activeProducerId === 'unassigned' ? '' : (activeProducerId || ''));
         const blockMessages = shouldRequireReference
           ? getSupplierUploadBlockMessages(!!referenceLinkToConsume, !!selectedEditorId)
           : [];
@@ -3775,7 +4037,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
           date: todayStr,
           accountId: null,
           productId: activeProductId || '',
-          producerId: activeProducerId === 'unassigned' ? null : (activeProducerId || null),
+          producerId: selectedEditorId || null,
           supplierId: linkedProducer?.id || null,
           status: ScheduleStatus.PLANNED,
           userId: user.uid,
@@ -3795,7 +4057,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
           date: todayStr,
           accountId: '',
           productId: activeProductId || '',
-          producerId: activeProducerId === 'unassigned' ? '' : (activeProducerId || ''),
+          producerId: selectedEditorId,
           supplierId: linkedProducer?.id || '',
           status: ScheduleStatus.PLANNED,
           audioMaterial: [],
@@ -3808,7 +4070,8 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
 
       if (!item) return;
       if (shouldRequireReference) {
-        const blockMessages = getSupplierUploadBlockMessages(!!item.creatorLinkId || !!referenceLinkToConsume, !!item.producerId);
+        const effectiveProducerId = productionEditorSelections[targetItemId] || item.producerId;
+        const blockMessages = getSupplierUploadBlockMessages(!!item.creatorLinkId || !!referenceLinkToConsume, !!effectiveProducerId);
         if (blockMessages.length > 0) {
           alert(blockMessages.join('\n'));
           return;
@@ -4258,10 +4521,13 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
   };
 
   const handleLinkEditorToProductionItem = async (item: ScheduleItem, editorId: string) => {
-    if (!editorId) return;
+    const currentEditorId = getProductionItemEditorId(item);
+    if (!editorId || editorId === currentEditorId) return;
 
     const selectedProd = producers.find(p => p.id === editorId);
     if (!selectedProd) return;
+
+    setProductionEditorSelections(prev => ({ ...prev, [item.id]: editorId }));
 
     if (item.id !== 'virtual-draft-item') {
       await handleAssignRole(item.id, editorId, 'editor');
@@ -4275,12 +4541,20 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
       });
     }
 
-    setActiveProducerId(editorId);
+    if (item.id === 'virtual-draft-item' || activeProducerId === 'unassigned') {
+      setActiveProducerId(editorId);
+    }
+  };
+
+  const getProductionItemEditorId = (item: ScheduleItem) => {
+    return productionEditorSelections[item.id] || item.producerId || '';
   };
 
   const renderEditorLinkSelect = (item: ScheduleItem, className = '') => {
-    if (item.producerId) {
-      const linkedEditor = producers.find(p => p.id === item.producerId);
+    const selectedEditorId = getProductionItemEditorId(item);
+
+    if (userRole !== 'supplier' && selectedEditorId) {
+      const linkedEditor = producers.find(p => p.id === selectedEditorId);
       return (
         <p className={`text-[10px] text-gray-500 font-black uppercase tracking-wider ${className}`}>
           Editor vinculado: <span className="text-gray-300">{linkedEditor?.name || 'Editor Geral'}</span>
@@ -4292,9 +4566,9 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
       <select
         className={`bg-[#0a0a0a] border border-[#222] rounded-xl px-3 py-2 text-[10px] font-black uppercase text-gray-400 cursor-pointer focus:border-orange-500 outline-none w-full ${className}`}
         onChange={(e) => handleLinkEditorToProductionItem(item, e.target.value)}
-        value=""
+        value={selectedEditorId}
       >
-        <option value="">Vincular Editor...</option>
+        <option value="">Selecione...</option>
         {producers
           .filter(p => !p.hidden && (p.role === 'editor' || !p.role))
           .map(p => (
@@ -4636,9 +4910,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                       const supplierUploadBlockMessages = userRole === 'supplier'
                         ? getSupplierUploadBlockMessages(
                             !!item.creatorLinkId || !!activePendingReferenceLink,
-                            item.id === 'virtual-draft-item'
-                              ? !!activeProducerId && activeProducerId !== 'unassigned'
-                              : !!item.producerId
+                            !!getProductionItemEditorId(item)
                           )
                         : [];
                       const canUploadSupplierMaterial = userRole !== 'supplier' || supplierUploadBlockMessages.length === 0;
@@ -4840,9 +5112,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                         const supplierUploadBlockMessages = userRole === 'supplier'
                           ? getSupplierUploadBlockMessages(
                               !!item.creatorLinkId || !!activePendingReferenceLink,
-                              item.id === 'virtual-draft-item'
-                                ? !!activeProducerId && activeProducerId !== 'unassigned'
-                                : !!item.producerId
+                              !!getProductionItemEditorId(item)
                             )
                           : [];
                         const canUploadSupplierMaterial = userRole !== 'supplier' || supplierUploadBlockMessages.length === 0;
@@ -4872,22 +5142,9 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                      )}
                                    </div>
                                    <p className="text-[10px] text-gray-500 font-bold uppercase mt-0.5">{acc?.name || 'Sem Conta'}</p>
-                                    {!item.producerId && (
-                                      <div className="mt-2 text-left">
-                                        <select 
-                                          className="bg-[#0a0a0a] border border-[#222] rounded-xl px-2.5 py-1.5 text-[10px] font-black uppercase text-gray-400 cursor-pointer focus:border-orange-500 outline-none w-full max-w-[150px]"
-                                          onChange={(e) => handleLinkEditorToProductionItem(item, e.target.value)}
-                                          value=""
-                                        >
-                                         <option value="">Vincular Editor...</option>
-                                         {producers
-                                           .filter(p => !p.hidden && (p.role === 'editor' || !p.role))
-                                           .map(p => (
-                                             <option key={p.id} value={p.id}>
-                                               {p.name}
-                                             </option>
-                                           ))}
-                                       </select>
+                                   {(userRole === 'supplier' || !item.producerId) && (
+                                     <div className="mt-2 text-left">
+                                       {renderEditorLinkSelect(item, 'max-w-[180px] py-1.5 px-2.5')}
                                      </div>
                                    )}
                                  </div>
