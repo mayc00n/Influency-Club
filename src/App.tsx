@@ -162,6 +162,28 @@ function getProducerLinkedEmail(producer?: Producer | null): string | undefined 
   return producer.linkedUserEmail || producer.linkedEmail || rawProducer.collaboratorEmail || rawProducer.editorEmail || rawProducer.supplierEmail;
 }
 
+function hasProducerUserLink(producer?: Producer | null): boolean {
+  return !!(getProducerLinkedUserId(producer) || getProducerLinkedEmail(producer));
+}
+
+function getProducerLinkedRole(producer?: Producer | null): 'editor' | 'supplier' | undefined {
+  if (!producer) return undefined;
+  if (producer.editorUserId && !producer.supplierUserId) return 'editor';
+  if (producer.supplierUserId && !producer.editorUserId) return 'supplier';
+  return producer.role === 'editor' || producer.role === 'supplier' ? producer.role : undefined;
+}
+
+function isProducerAvailableForRole(producer: Producer, role: 'editor' | 'supplier'): boolean {
+  if (producer.hidden) return false;
+  if (!hasProducerUserLink(producer)) return true;
+  return getProducerLinkedRole(producer) === role;
+}
+
+function getProducerStatusLabel(producer: Producer, role: 'editor' | 'supplier'): string {
+  if (!hasProducerUserLink(producer)) return 'Aguardando Atribuição';
+  return role === 'supplier' ? 'Fornecedor Ativo' : 'Editor Ativo';
+}
+
 function isProducerLinkedToUser(producer: Producer, user: FirebaseUser): boolean {
   const linkedId = getProducerLinkedUserId(producer);
   const linkedEmail = getProducerLinkedEmail(producer);
@@ -610,18 +632,18 @@ export default function App() {
     const profileSupplierId = profile?.supplierId || profile?.producerId || profile?.collaboratorId;
 
     if (profile?.producerRole === 'editor' || profile?.collaboratorRole === 'editor') {
-      return linkedByUser.find(p => p.id === profileEditorId && (p.role === 'editor' || !p.role)) ||
-        linkedByUser.find(p => p.role === 'editor' || !p.role);
+      return linkedByUser.find(p => p.id === profileEditorId && getProducerLinkedRole(p) === 'editor') ||
+        linkedByUser.find(p => getProducerLinkedRole(p) === 'editor');
     }
 
     if (profile?.producerRole === 'supplier' || profile?.collaboratorRole === 'supplier') {
-      return linkedByUser.find(p => p.id === profileSupplierId && p.role === 'supplier') ||
-        linkedByUser.find(p => p.role === 'supplier');
+      return linkedByUser.find(p => p.id === profileSupplierId && getProducerLinkedRole(p) === 'supplier') ||
+        linkedByUser.find(p => getProducerLinkedRole(p) === 'supplier');
     }
 
     return linkedByUser[0];
   }, [user, producers, profile]);
-  const userRole = linkedProducer?.role;
+  const userRole = getProducerLinkedRole(linkedProducer);
 
   useEffect(() => {
     if (user) {
@@ -984,12 +1006,13 @@ export default function App() {
           : [];
         if (unmatchedButEmailed.length === 1) {
           const producerToLink = unmatchedButEmailed[0];
+          const targetRole = getProducerLinkedRole(producerToLink) || 'editor';
           updateDoc(doc(db, 'producers', producerToLink.id), {
             linkedUserId: user.uid,
             collaboratorUserId: user.uid,
-            editorUserId: (producerToLink.role || 'editor') === 'editor' ? user.uid : null,
-            supplierUserId: producerToLink.role === 'supplier' ? user.uid : null,
-            role: producerToLink.role || 'editor',
+            editorUserId: targetRole === 'editor' ? user.uid : null,
+            supplierUserId: targetRole === 'supplier' ? user.uid : null,
+            role: targetRole,
             updatedAt: serverTimestamp()
           }).catch(err => console.error('Error auto-linking producer:', err));
         } else if (unmatchedButEmailed.length > 1) {
@@ -3771,7 +3794,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
   const pendingProduction = schedule.filter(s => s.status !== ScheduleStatus.POSTED && s.date === todayStr);
 
   const linkedProducer = producers.find(p => isProducerLinkedToUser(p, user));
-  const userRole = linkedProducer?.role;
+  const userRole = getProducerLinkedRole(linkedProducer);
   const pendingReferenceStorageKey = linkedProducer ? `pending_reference_link_${viewMode || 'PERSONAL'}_${linkedProducer.id}` : null;
   const activePendingReferenceLink = pendingReferenceLink || findPendingSupplierLink(tiktokLinks, pendingReferenceStorageKey ? localStorage.getItem(pendingReferenceStorageKey) : null, linkedProducer?.id) || null;
 
@@ -3799,7 +3822,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
     try {
       const targetUserId = selectedProfile.uid;
       const targetUserEmail = selectedProfile.email;
-      const targetRole: 'editor' | 'supplier' = showLinkModal.role || (subView === 'suppliers' ? 'supplier' : 'editor');
+      const targetRole: 'editor' | 'supplier' = subView === 'suppliers' ? 'supplier' : 'editor';
 
       const existingActiveLink = producers.find(p => {
         if (p.id === showLinkModal.id || p.hidden) return false;
@@ -3825,6 +3848,9 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
         await updateDoc(doc(db, 'producers', staleProducer.id), {
           linkedUserEmail: null,
           linkedEmail: null,
+          collaboratorEmail: null,
+          editorEmail: null,
+          supplierEmail: null,
           collaboratorUserId: null,
           editorUserId: null,
           supplierUserId: null,
@@ -3838,6 +3864,9 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
         linkedUserId: targetUserId,
         linkedUserEmail: targetUserEmail,
         linkedEmail: targetUserEmail,
+        collaboratorEmail: targetUserEmail,
+        editorEmail: targetRole === 'editor' ? targetUserEmail : null,
+        supplierEmail: targetRole === 'supplier' ? targetUserEmail : null,
         collaboratorUserId: targetUserId,
         editorUserId: targetRole === 'editor' ? targetUserId : null,
         supplierUserId: targetRole === 'supplier' ? targetUserId : null,
@@ -3901,9 +3930,13 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
         linkedUserId: null,
         linkedUserEmail: null,
         linkedEmail: null,
+        collaboratorEmail: null,
+        editorEmail: null,
+        supplierEmail: null,
         collaboratorUserId: null,
         editorUserId: null,
         supplierUserId: null,
+        role: null,
         linkedAt: null,
         updatedAt: serverTimestamp()
       });
@@ -4017,7 +4050,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
     try {
       let targetItemId = itemId;
       let item = schedule.find(s => s.id === itemId);
-      const shouldRequireReference = linkedProducer?.role === 'supplier' && (type === 'audio' || type === 'video');
+      const shouldRequireReference = userRole === 'supplier' && (type === 'audio' || type === 'video');
       let referenceLinkToConsume = shouldRequireReference ? activePendingReferenceLink : null;
 
       if (itemId === 'virtual-draft-item') {
@@ -4173,7 +4206,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
           updates.productionCode = buildProductionCode(item, accounts, products, schedule);
         }
 
-        if (linkedProducer?.role === 'supplier') {
+        if (userRole === 'supplier') {
           const alreadyLinkedReference = item.creatorLinkId
             ? tiktokLinks.find(lnk => lnk.id === item.creatorLinkId)
             : undefined;
@@ -4570,7 +4603,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
       >
         <option value="">Selecione...</option>
         {producers
-          .filter(p => !p.hidden && (p.role === 'editor' || !p.role))
+          .filter(p => isProducerAvailableForRole(p, 'editor'))
           .map(p => (
             <option key={p.id} value={p.id}>
               {p.name}
@@ -4766,7 +4799,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                 {/* Editor Folders */}
                 {producers.filter(p => {
                   if (p.hidden) return false;
-                  if (isPartner || userRole === 'supplier') return p.role === 'editor' || !p.role;
+                  if (isPartner || userRole === 'supplier') return isProducerAvailableForRole(p, 'editor');
                   if (userRole === 'editor') return isProducerLinkedToUser(p, user);
                   return false;
                 }).map(p => (
@@ -5844,7 +5877,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                       animate={{ opacity: 1, y: 0 }}
                       className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6"
                     >
-                      {producers.filter(p => !p.hidden && (p.role === 'editor' || !p.role)).map(p => (
+                      {producers.filter(p => isProducerAvailableForRole(p, 'editor')).map(p => (
                         <div key={p.id} className="relative group">
                           <button
                             onClick={() => {
@@ -5860,7 +5893,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                             </div>
                             <div className="space-y-1 relative z-10">
                               <p className="text-white font-black text-sm uppercase tracking-widest">{p.name}</p>
-                              <p className="text-[10px] text-gray-500 font-bold uppercase">{getProducerLinkedUserId(p) || getProducerLinkedEmail(p) ? 'Editor Ativo' : (!p.role ? 'Aguardando Atribuição' : 'Editor Profissional')}</p>
+                              <p className="text-[10px] text-gray-500 font-bold uppercase">{getProducerStatusLabel(p, 'editor')}</p>
                               {getProducerLinkedEmail(p) && <p className="text-[9px] text-orange-500 font-black uppercase truncate max-w-[120px]">{getProducerLinkedEmail(p)}</p>}
                             </div>
                             <div className="bg-[#0a0a0a] px-4 py-1.5 rounded-full border border-[#222] text-[9px] font-black text-orange-500 uppercase tracking-tighter relative z-10">
@@ -5904,7 +5937,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                       if (getProducerLinkedUserId(p) || getProducerLinkedEmail(p)) {
                                         handleUnlinkUser(p);
                                       } else {
-                                        setShowLinkModal(p);
+                                        setShowLinkModal({ ...p, role: 'editor' });
                                         setLinkEmail('');
                                         setMenuOpenId(null);
                                       }
@@ -5949,7 +5982,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                       animate={{ opacity: 1, y: 0 }}
                       className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6"
                     >
-                      {producers.filter(p => !p.hidden && (p.role === 'supplier' || (isPartner && !p.role))).map(p => (
+                      {producers.filter(p => isProducerAvailableForRole(p, 'supplier')).map(p => (
                         <div key={p.id} className="relative group">
                           <button
                             onClick={() => {
@@ -5965,7 +5998,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                             </div>
                             <div className="space-y-1 relative z-10">
                               <p className="text-white font-black text-sm uppercase tracking-widest">{p.name}</p>
-                              <p className="text-[10px] text-gray-500 font-bold uppercase">{getProducerLinkedUserId(p) || getProducerLinkedEmail(p) ? 'Fornecedor Ativo' : (!p.role ? 'Aguardando Atribuição' : 'Preparo de Materiais')}</p>
+                              <p className="text-[10px] text-gray-500 font-bold uppercase">{getProducerStatusLabel(p, 'supplier')}</p>
                               {getProducerLinkedEmail(p) && <p className="text-[9px] text-blue-500 font-black uppercase truncate max-w-[120px]">{getProducerLinkedEmail(p)}</p>}
                             </div>
                             <div className="bg-[#0a0a0a] px-4 py-1.5 rounded-full border border-[#222] text-[9px] font-black text-blue-500 uppercase tracking-tighter relative z-10">
@@ -6009,7 +6042,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                       if (getProducerLinkedUserId(p) || getProducerLinkedEmail(p)) {
                                         handleUnlinkUser(p);
                                       } else {
-                                        setShowLinkModal(p);
+                                        setShowLinkModal({ ...p, role: 'supplier' });
                                         setLinkEmail('');
                                         setMenuOpenId(null);
                                       }
@@ -6071,7 +6104,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                             value=""
                           >
                             <option value="">Atribuir {activeRole === 'supplier' ? 'Fornecedor' : 'Editor'}...</option>
-                            {producers.filter(p => !p.hidden && (activeRole === 'supplier' ? p.role === 'supplier' : (p.role === 'editor' || !p.role))).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            {producers.filter(p => isProducerAvailableForRole(p, activeRole === 'supplier' ? 'supplier' : 'editor')).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                           </select>
                         </div>
                       );
@@ -7157,7 +7190,7 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
   const [linkError, setLinkError] = useState<string | null>(null);
 
   const linkedProducer = producers.find(p => isProducerLinkedToUser(p, user));
-  const userRole = linkedProducer?.role;
+  const userRole = getProducerLinkedRole(linkedProducer);
 
   // Supplier UI state
   const [selectedDate, setSelectedDate] = useState(getLocalDateString());
@@ -7410,7 +7443,7 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
       let assignedEditorId = item.producerId;
       if (!assignedEditorId) {
         // Get all active editors in the system
-        const activeEditors = producers.filter(p => !p.hidden && (p.role === 'editor' || !p.role));
+        const activeEditors = producers.filter(p => isProducerAvailableForRole(p, 'editor'));
 
         // Get editors that are explicitly linked to this product (via linkedProductIds)
         const productEditors = activeEditors.filter(p => Array.isArray(p.linkedProductIds) && p.linkedProductIds.includes(item.productId));
@@ -8436,7 +8469,7 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
                     onChange={e => setNewItem({...newItem, producerId: e.target.value})}
                   >
                     <option value="">Sem Responsável</option>
-                    {producers.filter(p => !p.hidden && (p.role === 'editor' || !p.role)).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    {producers.filter(p => isProducerAvailableForRole(p, 'editor')).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                 </div>
               </div>
@@ -8740,7 +8773,7 @@ function ProductManager({ products, producers, user, subView, isPartner, Protect
         createdAt: new Date().toISOString()
       });
 
-      const activeEditors = producers.filter(p => !p.hidden && (p.role === 'editor' || !p.role));
+      const activeEditors = producers.filter(p => isProducerAvailableForRole(p, 'editor'));
       await Promise.all(activeEditors.map(editor => {
         const linkedProductIds = Array.isArray(editor.linkedProductIds) ? editor.linkedProductIds : [];
         if (linkedProductIds.includes(docRef.id)) return Promise.resolve();
