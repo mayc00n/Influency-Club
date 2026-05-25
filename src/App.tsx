@@ -7219,6 +7219,8 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
   const [statusModal, setStatusModal] = useState<{ id: string, targetStatus: ScheduleStatus } | null>(null);
   const [videoLink, setVideoLink] = useState('');
   const [linkError, setLinkError] = useState<string | null>(null);
+  const [productPickerOpen, setProductPickerOpen] = useState(false);
+  const [productPickerSearch, setProductPickerSearch] = useState('');
 
   const linkedProducer = producers.find(p => isProducerLinkedToUser(p, user));
   const userRole = getProducerLinkedRole(linkedProducer);
@@ -8270,6 +8272,19 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
     return products.filter(p => linkedIds.includes(p.id));
   }, [products, accounts, newItem.accountId]);
 
+  const selectedPlannerProduct = useMemo(() => {
+    return products.find(product => product.id === newItem.productId);
+  }, [products, newItem.productId]);
+
+  const productPickerOptions = useMemo(() => {
+    const normalizedSearch = productPickerSearch.trim().toLocaleLowerCase('pt-BR');
+    if (!normalizedSearch) return filteredProductsForPlanner;
+    return filteredProductsForPlanner.filter(product =>
+      product.name.toLocaleLowerCase('pt-BR').includes(normalizedSearch) ||
+      (product.category || '').toLocaleLowerCase('pt-BR').includes(normalizedSearch)
+    );
+  }, [filteredProductsForPlanner, productPickerSearch]);
+
   const handleCreate = async () => {
     if (!newItem.accountId) return;
     
@@ -8412,7 +8427,7 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
         <motion.div 
           initial={{ opacity: 0, y: -20 }} 
           animate={{ opacity: 1, y: 0 }} 
-          className="bg-[#141414] border border-[#222] p-8 rounded-[2rem] space-y-6 shadow-2xl relative overflow-hidden"
+          className="bg-[#141414] border border-[#222] p-8 rounded-[2rem] space-y-6 shadow-2xl relative overflow-visible"
         >
           <div className="absolute top-0 right-0 p-8 opacity-5">
             <Calendar className="w-32 h-32 text-orange-500" />
@@ -8476,15 +8491,102 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
               <div className="space-y-2">
                 <label className="text-xs font-black text-gray-500 uppercase tracking-widest px-1">Produto Principal</label>
                 <div className="relative">
-                  <Hash className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                  <select 
-                    className="w-full bg-[#0a0a0a] border border-[#222] rounded-2xl pl-11 pr-4 py-3 text-white outline-none focus:border-orange-500 transition-colors text-sm appearance-none" 
-                    value={newItem.productId} 
-                    onChange={e => setNewItem({...newItem, productId: e.target.value})}
+                  <button
+                    type="button"
+                    onClick={() => setProductPickerOpen(open => !open)}
+                    className="w-full bg-[#0a0a0a] border border-[#222] rounded-2xl px-3 py-2 text-left outline-none focus:border-orange-500 hover:border-gray-700 transition-colors min-h-[46px] flex items-center gap-3"
                   >
-                    <option value="">Escolher Produto</option>
-                    {filteredProductsForPlanner.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
+                    <div className="w-8 h-8 rounded-xl bg-[#141414] border border-[#222] overflow-hidden flex items-center justify-center shrink-0">
+                      {selectedPlannerProduct?.imageUrl ? (
+                        <img src={selectedPlannerProduct.imageUrl} alt={selectedPlannerProduct.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      ) : (
+                        <Hash className="w-4 h-4 text-gray-500" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-sm font-bold truncate ${selectedPlannerProduct ? 'text-white' : 'text-gray-500'}`}>
+                        {selectedPlannerProduct?.name || 'Escolher Produto'}
+                      </p>
+                      <p className="text-[10px] text-gray-500 uppercase font-black tracking-wider truncate">
+                        {selectedPlannerProduct?.category || 'Produto principal'}
+                      </p>
+                    </div>
+                    <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${productPickerOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {productPickerOpen && (
+                    <>
+                      <div className="fixed inset-0 z-20" onClick={() => setProductPickerOpen(false)} />
+                      <div className="absolute left-0 right-0 top-full z-30 mt-2 bg-[#0f0f0f] border border-[#222] rounded-2xl shadow-2xl overflow-hidden">
+                        <div className="p-3 border-b border-[#222]">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                            <input
+                              autoFocus
+                              placeholder="Buscar produto..."
+                              className="w-full bg-[#0a0a0a] border border-[#222] rounded-xl pl-10 pr-3 py-2 text-sm text-white outline-none focus:border-orange-500"
+                              value={productPickerSearch}
+                              onChange={e => setProductPickerSearch(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <div className="max-h-72 overflow-y-auto custom-scrollbar p-2 space-y-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNewItem({ ...newItem, productId: '' });
+                              setProductPickerSearch('');
+                              setProductPickerOpen(false);
+                            }}
+                            className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-[#1a1a1a] transition-colors"
+                          >
+                            <div className="w-10 h-10 rounded-xl bg-[#141414] border border-[#222] flex items-center justify-center shrink-0">
+                              <Hash className="w-4 h-4 text-gray-600" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-bold text-gray-400 truncate">Sem produto</p>
+                              <p className="text-[10px] text-gray-600 uppercase font-black tracking-wider">Planejar sem produto principal</p>
+                            </div>
+                          </button>
+
+                          {productPickerOptions.map(product => {
+                            const isSelected = product.id === newItem.productId;
+                            return (
+                              <button
+                                key={product.id}
+                                type="button"
+                                onClick={() => {
+                                  setNewItem({ ...newItem, productId: product.id });
+                                  setProductPickerSearch('');
+                                  setProductPickerOpen(false);
+                                }}
+                                className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors ${
+                                  isSelected ? 'bg-orange-500/10 border border-orange-500/30' : 'border border-transparent hover:bg-[#1a1a1a]'
+                                }`}
+                              >
+                                <div className="w-10 h-10 rounded-xl bg-[#141414] border border-[#222] overflow-hidden flex items-center justify-center shrink-0">
+                                  {product.imageUrl ? (
+                                    <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                  ) : (
+                                    <Hash className="w-4 h-4 text-orange-500" />
+                                  )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className={`text-sm font-bold truncate ${isSelected ? 'text-white' : 'text-gray-300'}`}>{product.name}</p>
+                                  <p className="text-[10px] text-gray-500 uppercase font-black tracking-wider truncate">{product.category || 'Sem categoria'}</p>
+                                </div>
+                                {isSelected && <CheckCircle2 className="w-4 h-4 text-orange-500 shrink-0" />}
+                              </button>
+                            );
+                          })}
+
+                          {productPickerOptions.length === 0 && (
+                            <div className="py-6 text-center text-sm text-gray-600 italic">Nenhum produto encontrado</div>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )}
