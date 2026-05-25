@@ -8766,8 +8766,11 @@ function ProductManager({ products, producers, user, subView, isPartner, Protect
   const [newProd, setNewProd] = useState({ name: '', category: '', winningStatus: WinningStatus.TESTING, price: 0, commissionValue: 0, imageUrl: '', productUrl: '', referenceUrl: '' });
   const [searchTerm, setSearchTerm] = useState('');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [isCreatingProduct, setIsCreatingProduct] = useState(false);
+  const [createProductError, setCreateProductError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
+  const creatingProductRef = useRef(false);
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>, isEditing: boolean) => {
     const file = e.target.files?.[0];
@@ -8795,28 +8798,57 @@ function ProductManager({ products, producers, user, subView, isPartner, Protect
   );
 
   const handleCreate = async () => {
-    if (!newProd.name) return;
+    if (creatingProductRef.current) return;
+
+    const productName = newProd.name.trim();
+    const normalizedProductName = productName.toLocaleLowerCase('pt-BR');
+    setCreateProductError(null);
+
+    if (!productName) {
+      setCreateProductError('Informe o nome do produto antes de adicionar à base.');
+      return;
+    }
+
+    const alreadyExists = products.some(product => product.name.trim().toLocaleLowerCase('pt-BR') === normalizedProductName);
+    if (alreadyExists) {
+      setCreateProductError('Já existe um produto com esse nome na base.');
+      return;
+    }
+
+    creatingProductRef.current = true;
+    setIsCreatingProduct(true);
+
     try {
       const docRef = await addDoc(collection(db, 'products'), { 
-        ...newProd, 
+        ...newProd,
+        name: productName,
+        category: newProd.category.trim(),
+        productUrl: newProd.productUrl.trim(),
+        referenceUrl: newProd.referenceUrl.trim(),
         userId: user.uid,
         scope: viewMode === ViewMode.COMPANY ? 'COMPANY' : 'PERSONAL',
         createdAt: new Date().toISOString()
       });
 
       const activeEditors = producers.filter(p => isProducerAvailableForRole(p, 'editor'));
-      await Promise.all(activeEditors.map(editor => {
-        const linkedProductIds = Array.isArray(editor.linkedProductIds) ? editor.linkedProductIds : [];
-        if (linkedProductIds.includes(docRef.id)) return Promise.resolve();
-        return updateDoc(doc(db, 'producers', editor.id), {
-          linkedProductIds: [...linkedProductIds, docRef.id]
-        });
-      }));
+      const editorLinkResults = await Promise.allSettled(activeEditors.map(editor =>
+        updateDoc(doc(db, 'producers', editor.id), {
+          linkedProductIds: arrayUnion(docRef.id)
+        })
+      ));
+      const failedEditorLinks = editorLinkResults.filter(result => result.status === 'rejected').length;
 
       setNewProd({ name: '', category: '', winningStatus: WinningStatus.TESTING, price: 0, commissionValue: 0, imageUrl: '', productUrl: '', referenceUrl: '' });
       setActiveTab('products_edit');
+      if (failedEditorLinks > 0) {
+        alert(`Produto criado, mas ${failedEditorLinks} editor(es) não foram vinculados automaticamente. Tente vincular novamente ou verifique as permissões.`);
+      }
     } catch (e) { 
+      setCreateProductError(e instanceof Error ? e.message : 'Não foi possível adicionar o produto à base. Tente novamente.');
       handleFirestoreError(e, OperationType.CREATE, 'products');
+    } finally {
+      creatingProductRef.current = false;
+      setIsCreatingProduct(false);
     }
   };
 
@@ -8881,7 +8913,10 @@ function ProductManager({ products, producers, user, subView, isPartner, Protect
                 placeholder="Ex: Mini Processador Portátil" 
                 className="w-full bg-[#0a0a0a] border border-[#222] rounded-2xl px-4 py-3 text-white outline-none focus:border-orange-500 transition-colors" 
                 value={newProd.name} 
-                onChange={e => setNewProd({...newProd, name: e.target.value})} 
+                onChange={e => {
+                  setNewProd({...newProd, name: e.target.value});
+                  if (createProductError) setCreateProductError(null);
+                }} 
               />
             </div>
             <div className="space-y-2">
@@ -8986,10 +9021,21 @@ function ProductManager({ products, producers, user, subView, isPartner, Protect
             )}
           </div>
 
-          <div className="flex justify-end pt-4">
+          <div className="flex flex-col gap-3 pt-4 md:flex-row md:items-center md:justify-end">
+            {createProductError && (
+              <div className="flex items-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs font-bold text-red-400 md:mr-auto">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span>{createProductError}</span>
+              </div>
+            )}
             <button 
               onClick={handleCreate} 
-              className="bg-white text-black px-12 py-4 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-orange-500 hover:shadow-[0_0_30px_rgba(249,115,22,0.4)] transition-all"
+              disabled={isCreatingProduct}
+              className={`bg-white text-black px-12 py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all ${
+                isCreatingProduct
+                  ? 'opacity-60 cursor-not-allowed'
+                  : 'hover:bg-orange-500 hover:shadow-[0_0_30px_rgba(249,115,22,0.4)]'
+              }`}
             >
               Adicionar à Base
             </button>
