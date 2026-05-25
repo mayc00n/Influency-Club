@@ -3536,25 +3536,34 @@ function AccountsManager({ accounts, user, subView, products, viewMode, setActiv
                           />
                         )}
                         
-                        <div className="flex items-center gap-3 text-left relative z-10">
-                          <div className={`p-2 rounded-lg transition-colors ${
-                            isLinked 
-                              ? isNewlyModified ? 'bg-orange-500/20 text-orange-400' : 'bg-orange-500 text-black shadow-[0_0_10px_rgba(249,115,22,0.4)]' 
-                              : 'bg-[#1a1a1a] text-gray-500 group-hover:text-gray-300'
+                        <div className="flex min-w-0 items-center gap-3 text-left relative z-10">
+                          <div className={`w-11 h-11 rounded-xl overflow-hidden border flex items-center justify-center shrink-0 transition-colors ${
+                            isLinked
+                              ? isNewlyModified ? 'bg-orange-500/10 border-orange-500/40' : 'bg-orange-500/10 border-orange-500/50 shadow-[0_0_10px_rgba(249,115,22,0.25)]'
+                              : 'bg-[#1a1a1a] border-[#222] group-hover:border-gray-700'
                           }`}>
-                            <Hash className="w-4 h-4" />
+                            {p.imageUrl ? (
+                              <img
+                                src={p.imageUrl}
+                                alt={p.name}
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <Hash className={`w-4 h-4 transition-colors ${isLinked ? 'text-orange-400' : 'text-gray-500 group-hover:text-gray-300'}`} />
+                            )}
                           </div>
-                          <div className="flex flex-col">
-                            <div className="flex items-center gap-2">
-                              <p className={`text-sm font-bold transition-colors ${isLinked ? 'text-white' : 'text-gray-400'}`}>{p.name}</p>
+                          <div className="flex min-w-0 flex-col">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <p className={`text-sm font-bold transition-colors truncate ${isLinked ? 'text-white' : 'text-gray-400'}`}>{p.name}</p>
                               {isNewlyModified && isLinked && (
-                                <span className="text-[8px] bg-orange-500 text-black px-1 rounded font-black uppercase">Novo</span>
+                                <span className="shrink-0 text-[8px] bg-orange-500 text-black px-1 rounded font-black uppercase">Novo</span>
                               )}
                               {wasInitiallyLinked && !isLinked && (
-                                <span className="text-[8px] bg-red-500 text-white px-1 rounded font-black uppercase">Removendo</span>
+                                <span className="shrink-0 text-[8px] bg-red-500 text-white px-1 rounded font-black uppercase">Removendo</span>
                               )}
                             </div>
-                            <p className="text-[10px] text-gray-500 uppercase font-black tracking-wider">{p.winningStatus}</p>
+                            <p className="text-[10px] text-gray-500 uppercase font-black tracking-wider truncate">{p.category || 'Sem categoria'}</p>
                           </div>
                         </div>
                         
