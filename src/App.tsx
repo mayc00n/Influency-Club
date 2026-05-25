@@ -144,6 +144,27 @@ function hasEditableMaterial(item: ScheduleItem): boolean {
   ].some(value => normalizeFileList(value).length > 0);
 }
 
+function hasSupplierPreparedMaterial(item: ScheduleItem): boolean {
+  const rawItem = item as any;
+  return [
+    item.audioMaterial,
+    item.videoMaterial,
+    rawItem.baseAudio,
+    rawItem.rawMaterials,
+    rawItem.uploadedFiles,
+    rawItem.materials,
+    rawItem.materialBruto,
+    rawItem.materiaisBrutos,
+  ].some(value => normalizeFileList(value).length > 0);
+}
+
+function needsSupplierDashboardAction(item: ScheduleItem, supplierId?: string): boolean {
+  if (!supplierId) return false;
+  if (item.status !== ScheduleStatus.PLANNED) return false;
+  if (hasSupplierPreparedMaterial(item)) return false;
+  return item.supplierId === supplierId || !item.supplierId;
+}
+
 function getSupplierUploadBlockMessages(hasContentLink: boolean, hasLinkedEditor: boolean): string[] {
   const messages: string[] = [];
   if (!hasContentLink) messages.push('Adicione o link do conteúdo');
@@ -1794,10 +1815,11 @@ export default function App() {
                     const videosEditados = editorItems.filter(s => (s.finishedVideoUrl && s.finishedVideoUrl.length > 0) || s.status === ScheduleStatus.PRODUCED || s.status === ScheduleStatus.POSTED).length;
                     const editorPendentes = Math.max(0, materiaisFornecidos - videosEditados);
 
-                    const supplierItems = schedule.filter(s => s.supplierId === linkedProducer.id);
-                    const preparados = supplierItems.filter(s => (s.audioMaterial && s.audioMaterial.length > 0) || (s.videoMaterial && s.videoMaterial.length > 0) || s.status !== ScheduleStatus.PLANNED).length;
-                    const aPreparar = supplierItems.length;
-                    const supplierPendentes = Math.max(0, aPreparar - preparados);
+                    const supplierItems = schedule.filter(s => s.supplierId === linkedProducer.id || !s.supplierId);
+                    const supplierActionItems = supplierItems.filter(s => needsSupplierDashboardAction(s, linkedProducer.id));
+                    const preparados = supplierItems.filter(s => hasSupplierPreparedMaterial(s) || s.status !== ScheduleStatus.PLANNED).length;
+                    const aPreparar = supplierActionItems.length;
+                    const supplierPendentes = supplierActionItems.length;
 
                     return (
                       <div className="space-y-6">
@@ -1901,7 +1923,7 @@ export default function App() {
                         .filter(s => {
                           const statusMatch = s.status !== ScheduleStatus.POSTED;
                           if (userRole === 'supplier' && linkedProducer) {
-                            return statusMatch && (s.supplierId === linkedProducer.id || !s.supplierId);
+                            return needsSupplierDashboardAction(s, linkedProducer.id);
                           }
                           return statusMatch;
                         })
@@ -2013,7 +2035,7 @@ export default function App() {
                         const count = schedule.filter(s => {
                           const statusMatch = s.status !== ScheduleStatus.POSTED;
                           if (userRole === 'supplier' && linkedProducer) {
-                            return statusMatch && (s.supplierId === linkedProducer.id || !s.supplierId);
+                            return needsSupplierDashboardAction(s, linkedProducer.id);
                           }
                           return statusMatch;
                         }).length;
