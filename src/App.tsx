@@ -172,6 +172,12 @@ function hasPartialSupplierMaterial(item: ScheduleItem): boolean {
   return !hasSupplierPreparedMaterial(item) && (hasSupplierAudioMaterial(item) || hasSupplierVideoMaterial(item));
 }
 
+function getSupplierPreparationRank(item: ScheduleItem): number {
+  if (hasSupplierPreparedMaterial(item)) return 0;
+  if (hasPartialSupplierMaterial(item)) return 1;
+  return 2;
+}
+
 function isScheduleAssignedToSupplier(item: ScheduleItem, supplierId?: string): boolean {
   return !!supplierId && item.supplierId === supplierId;
 }
@@ -4630,6 +4636,10 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
         return condProducer && condProduct && condMaterial;
       })
       .sort((a, b) => {
+        if (userRole === 'supplier') {
+          const rankComp = getSupplierPreparationRank(a) - getSupplierPreparationRank(b);
+          if (rankComp !== 0) return rankComp;
+        }
         const dateComp = a.date.localeCompare(b.date);
         if (dateComp !== 0) return dateComp;
         return (a.dailyIndex || 0) - (b.dailyIndex || 0);
@@ -7818,7 +7828,11 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
             {/* Products Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               {supplierGroupedProducts.map(({ product, items }) => {
-                const sortedItems = [...items].sort((a, b) => a.id.localeCompare(b.id));
+                const sortedItems = [...items].sort((a, b) => {
+                  const rankComp = getSupplierPreparationRank(a) - getSupplierPreparationRank(b);
+                  if (rankComp !== 0) return rankComp;
+                  return a.id.localeCompare(b.id);
+                });
 
                 return (
                   <div 
