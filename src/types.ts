@@ -98,6 +98,10 @@ export interface ScheduleItem {
   productionCode?: string;
   videoCode?: string;
   producedAt?: string;
+  postedAt?: any;
+  postedBy?: string;
+  awaitingPostLink?: boolean;
+  postLink?: string | null;
   materialAddedAt?: string;
   dailyIndex?: number;
   scope?: 'PERSONAL' | 'COMPANY';

@@ -2387,7 +2387,7 @@ export default function App() {
               {activeTab === 'violations' && <ViolationTracker violations={violations} accounts={accounts} user={user} viewMode={viewMode} />}
               {activeTab === 'integrations' && <IntegrationsManager accounts={accounts} />}
               {activeTab === 'users' && <UserManager contextUser={user} isPartner={isPartner} />}
-              {activeTab === 'ready_videos' && <ReadyVideosManager schedule={schedule} accounts={accounts} products={products} producers={producers} />}
+              {activeTab === 'ready_videos' && <ReadyVideosManager schedule={schedule} accounts={accounts} products={products} producers={producers} user={user} isPartner={isPartner} />}
               {activeTab === 'creators' && <CreatorsManager sales={sales} tiktokLinks={tiktokLinks} schedule={schedule} products={products} accounts={accounts} isPartner={isPartner} ProtectedValue={ProtectedValue} />}
             </motion.div>
           </AnimatePresence>
@@ -8548,6 +8548,8 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
       await updateDoc(doc(db, 'schedule', statusModal.id), { 
         status: statusModal.targetStatus,
         videoLink: videoLink,
+        postLink: videoLink,
+        awaitingPostLink: false,
         updatedAt: serverTimestamp() 
       });
       setStatusModal(null);
@@ -8875,7 +8877,7 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
           </div>
         </div>
         <div className="divide-y divide-[#222]">
-          {schedule.filter(item => item.status !== ScheduleStatus.POSTED).sort((a, b) => b.date.localeCompare(a.date)).map(item => (
+          {schedule.filter(item => item.status !== ScheduleStatus.POSTED || item.awaitingPostLink).sort((a, b) => b.date.localeCompare(a.date)).map(item => (
             <div key={item.id} className="p-6 flex flex-wrap items-center justify-between gap-6 hover:bg-[#1a1a1a]/50 transition-all group">
               <div className="flex items-center gap-6">
                 <div className="flex flex-col items-center justify-center p-3 bg-[#0a0a0a] border border-[#222] rounded-2xl min-w-[72px] shadow-inner group-hover:border-orange-500/30 transition-colors">
@@ -8908,7 +8910,19 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
                     <span className="max-w-[250px] truncate relative z-10">{item.videoSource}</span>
                   </div>
                 )}
-                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3">
+                  {item.awaitingPostLink && (
+                    <button
+                      onClick={() => {
+                        setStatusModal({ id: item.id, targetStatus: ScheduleStatus.POSTED });
+                        setVideoLink('');
+                        setLinkError(null);
+                      }}
+                      className="px-4 py-3 bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-yellow-500 hover:text-black transition-all"
+                    >
+                      Colar link
+                    </button>
+                  )}
                   <button 
                     onClick={() => handleDelete(item.id)}
                     className="p-3 text-gray-600 hover:text-red-500 transition-colors bg-[#0a0a0a] border border-[#222] rounded-2xl md:opacity-0 md:group-hover:opacity-100 shadow-inner"
@@ -8932,7 +8946,7 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
               </div>
             </div>
           ))}
-          {schedule.filter(item => item.status !== ScheduleStatus.POSTED).length === 0 && (
+          {schedule.filter(item => item.status !== ScheduleStatus.POSTED || item.awaitingPostLink).length === 0 && (
             <div className="p-24 text-center space-y-4">
               <div className="w-16 h-16 bg-[#1a1a1a] rounded-full flex items-center justify-center mx-auto opacity-20">
                 <Calendar className="w-8 h-8 text-gray-500" />
@@ -10099,7 +10113,7 @@ const handle = resolveCreatorHandle(
   );
 }
 
-function ReadyVideosManager({ schedule, accounts, products, producers }: { schedule: ScheduleItem[], accounts: Account[], products: Product[], producers: Producer[] }) {
+function ReadyVideosManager({ schedule, accounts, products, producers, user, isPartner }: { schedule: ScheduleItem[], accounts: Account[], products: Product[], producers: Producer[], user: FirebaseUser, isPartner: boolean }) {
   const readyItems = useMemo(() => {
     return schedule.filter(s => s.status === ScheduleStatus.PRODUCED || s.status === ScheduleStatus.POSTED);
   }, [schedule]);
@@ -10115,7 +10129,27 @@ function ReadyVideosManager({ schedule, accounts, products, producers }: { sched
     return null;
   };
 
-  const handleDownload = async (fileUrl: string, fileName: string) => {
+  const markReadyVideoAsDownloadedByPartner = async (item: ScheduleItem) => {
+    if (!isPartner || item.status === ScheduleStatus.POSTED) return;
+
+    try {
+      await updateDoc(doc(db, 'schedule', item.id), {
+        status: ScheduleStatus.POSTED,
+        postedAt: serverTimestamp(),
+        postedBy: user.uid,
+        awaitingPostLink: true,
+        postLink: null,
+        videoLink: null,
+        updatedAt: serverTimestamp()
+      });
+    } catch (err) {
+      console.error('Failed to mark ready video as awaiting post link:', err);
+    }
+  };
+
+  const handleDownload = async (item: ScheduleItem, fileUrl: string, fileName: string) => {
+    await markReadyVideoAsDownloadedByPartner(item);
+
     const driveId = getGoogleDriveId(fileUrl);
     if (driveId) {
       setDownloadingFile(fileUrl);
@@ -10161,6 +10195,8 @@ function ReadyVideosManager({ schedule, accounts, products, producers }: { sched
             const prod = products.find(p => p.id === item.productId);
             const editor = producers.find(p => p.id === item.producerId);
             const videosList = normalizeFileList(item.finishedVideoUrl);
+            const postLink = item.postLink || item.videoLink;
+            const isAwaitingPostLink = item.status === ScheduleStatus.POSTED && (item.awaitingPostLink || !postLink);
 
             return (
               <motion.div 
@@ -10177,6 +10213,11 @@ function ReadyVideosManager({ schedule, accounts, products, producers }: { sched
                       <span className={`text-[10px] uppercase font-black tracking-widest px-2.5 py-1 rounded-lg border ${item.status === ScheduleStatus.POSTED ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'}`}>
                         {item.status === ScheduleStatus.POSTED ? 'Postado' : 'Pronto'}
                       </span>
+                      {isAwaitingPostLink && (
+                        <span className="text-[10px] uppercase font-black tracking-widest px-2.5 py-1 rounded-lg border bg-yellow-500/10 text-yellow-400 border-yellow-500/20">
+                          Aguardando link
+                        </span>
+                      )}
                     </div>
                     <span className="text-[10px] font-mono text-gray-500 font-bold bg-[#0a0a0a] border border-[#1e1e1e] p-1.5 rounded-lg">
                       Lote: {item.date.split('-').reverse().slice(0, 2).join('/')} n° {item.dailyIndex || '001'}
@@ -10197,9 +10238,9 @@ function ReadyVideosManager({ schedule, accounts, products, producers }: { sched
 
                 <div className="space-y-3 pt-4 border-t border-[#1e1e1e]">
                   {videosList.length === 0 ? (
-                    item.status === ScheduleStatus.POSTED && item.videoLink ? (
+                    item.status === ScheduleStatus.POSTED && postLink ? (
                       <button
-                        onClick={() => window.open(item.videoLink, '_blank')}
+                        onClick={() => window.open(postLink, '_blank')}
                         className="w-full bg-green-500 hover:bg-green-400 text-black py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95"
                       >
                         <ExternalLink className="w-4 h-4" />
@@ -10215,7 +10256,7 @@ function ReadyVideosManager({ schedule, accounts, products, producers }: { sched
                       return (
                         <button
                           key={fIdx}
-                          onClick={() => handleDownload(url, name)}
+                          onClick={() => handleDownload(item, url, name)}
                           disabled={downloadingFile === url}
                           className="w-full bg-white hover:bg-gray-100 text-black py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg hover:shadow-white/5 active:scale-95 disabled:opacity-50 disabled:cursor-wait"
                         >
