@@ -144,6 +144,16 @@ function hasEditableMaterial(item: ScheduleItem): boolean {
   ].some(value => normalizeFileList(value).length > 0);
 }
 
+function hasFinishedVideo(item: ScheduleItem): boolean {
+  return normalizeFileList(item.finishedVideoUrl).length > 0;
+}
+
+function needsEditorDashboardAction(item: ScheduleItem, editorId?: string): boolean {
+  if (!editorId || item.producerId !== editorId) return false;
+  if (hasFinishedVideo(item)) return false;
+  return item.status === ScheduleStatus.EDITING && hasEditableMaterial(item);
+}
+
 function hasSupplierAudioMaterial(item: ScheduleItem): boolean {
   const rawItem = item as any;
   return [
@@ -1854,9 +1864,10 @@ export default function App() {
                   {/* Operations Summary - For Editors and Suppliers */}
                   {!isPartner && viewMode === ViewMode.COMPANY && (userRole === 'supplier' || userRole === 'editor') && linkedProducer && (() => {
                     const editorItems = schedule.filter(s => s.producerId === linkedProducer.id);
+                    const editorActionItems = editorItems.filter(s => needsEditorDashboardAction(s, linkedProducer.id));
                     const materiaisFornecidos = editorItems.filter(s => (s.audioMaterial && s.audioMaterial.length > 0) || (s.videoMaterial && s.videoMaterial.length > 0)).length;
                     const videosEditados = editorItems.filter(s => (s.finishedVideoUrl && s.finishedVideoUrl.length > 0) || s.status === ScheduleStatus.PRODUCED || s.status === ScheduleStatus.POSTED).length;
-                    const editorPendentes = Math.max(0, materiaisFornecidos - videosEditados);
+                    const editorPendentes = editorActionItems.length;
 
                     const supplierItems = supplierDashboardSchedule;
                     const supplierActionItems = supplierItems.filter(s => needsSupplierDashboardAction(s, linkedProducer.id));
@@ -2017,10 +2028,7 @@ export default function App() {
                       ))}
 
                       {userRole === 'editor' && linkedProducer && schedule
-                        .filter(s => {
-                          const statusMatch = s.status !== ScheduleStatus.POSTED;
-                          return statusMatch && s.producerId === linkedProducer.id && hasEditableMaterial(s);
-                        })
+                        .filter(s => needsEditorDashboardAction(s, linkedProducer.id))
                         .sort((a, b) => a.date.localeCompare(b.date))
                         .slice(0, 4)
                         .map((item) => {
@@ -2058,10 +2066,9 @@ export default function App() {
 
                       {(() => {
                         if (userRole === 'editor') {
-                          const editorCount = schedule.filter(s => {
-                            const statusMatch = s.status !== ScheduleStatus.POSTED;
-                            return statusMatch && linkedProducer && s.producerId === linkedProducer.id && hasEditableMaterial(s);
-                          }).length;
+                          const editorCount = linkedProducer
+                            ? schedule.filter(s => needsEditorDashboardAction(s, linkedProducer.id)).length
+                            : 0;
                           
                           if (editorCount === 0) {
                             return (
