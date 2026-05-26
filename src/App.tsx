@@ -158,11 +158,15 @@ function hasSupplierPreparedMaterial(item: ScheduleItem): boolean {
   ].some(value => normalizeFileList(value).length > 0);
 }
 
+function isScheduleAssignedToSupplier(item: ScheduleItem, supplierId?: string): boolean {
+  return !!supplierId && item.supplierId === supplierId;
+}
+
 function needsSupplierDashboardAction(item: ScheduleItem, supplierId?: string): boolean {
-  if (!supplierId) return false;
+  if (!isScheduleAssignedToSupplier(item, supplierId)) return false;
   if (item.status !== ScheduleStatus.PLANNED) return false;
   if (hasSupplierPreparedMaterial(item)) return false;
-  return item.supplierId === supplierId || !item.supplierId;
+  return true;
 }
 
 function getSupplierUploadBlockMessages(hasContentLink: boolean, hasLinkedEditor: boolean): string[] {
@@ -665,6 +669,22 @@ export default function App() {
     return linkedByUser[0];
   }, [user, producers, profile]);
   const userRole = getProducerLinkedRole(linkedProducer);
+  const supplierDashboardSchedule = useMemo(() => {
+    if (userRole !== 'supplier') return schedule;
+    return linkedProducer ? schedule.filter(item => isScheduleAssignedToSupplier(item, linkedProducer.id)) : [];
+  }, [schedule, userRole, linkedProducer]);
+  const supplierDashboardAccountIds = useMemo(() => {
+    if (userRole !== 'supplier') return null;
+    return new Set(supplierDashboardSchedule.map(item => item.accountId).filter(Boolean));
+  }, [supplierDashboardSchedule, userRole]);
+  const dashboardAccounts = useMemo(() => {
+    if (userRole !== 'supplier' || !supplierDashboardAccountIds) return accounts;
+    return accounts.filter(account => supplierDashboardAccountIds.has(account.id));
+  }, [accounts, userRole, supplierDashboardAccountIds]);
+  const dashboardViolations = useMemo(() => {
+    if (userRole !== 'supplier' || !supplierDashboardAccountIds) return violations;
+    return violations.filter(violation => supplierDashboardAccountIds.has(violation.accountId));
+  }, [violations, userRole, supplierDashboardAccountIds]);
 
   useEffect(() => {
     if (user) {
@@ -1815,7 +1835,7 @@ export default function App() {
                     const videosEditados = editorItems.filter(s => (s.finishedVideoUrl && s.finishedVideoUrl.length > 0) || s.status === ScheduleStatus.PRODUCED || s.status === ScheduleStatus.POSTED).length;
                     const editorPendentes = Math.max(0, materiaisFornecidos - videosEditados);
 
-                    const supplierItems = schedule.filter(s => s.supplierId === linkedProducer.id || !s.supplierId);
+                    const supplierItems = supplierDashboardSchedule;
                     const supplierActionItems = supplierItems.filter(s => needsSupplierDashboardAction(s, linkedProducer.id));
                     const preparados = supplierItems.filter(s => hasSupplierPreparedMaterial(s) || s.status !== ScheduleStatus.PLANNED).length;
                     const aPreparar = supplierActionItems.length;
@@ -1919,7 +1939,7 @@ export default function App() {
                       </button>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                      {userRole !== 'editor' && schedule
+                      {userRole !== 'editor' && supplierDashboardSchedule
                         .filter(s => {
                           const statusMatch = s.status !== ScheduleStatus.POSTED;
                           if (userRole === 'supplier' && linkedProducer) {
@@ -2032,7 +2052,7 @@ export default function App() {
                           }
                           return null;
                         }
-                        const count = schedule.filter(s => {
+                        const count = supplierDashboardSchedule.filter(s => {
                           const statusMatch = s.status !== ScheduleStatus.POSTED;
                           if (userRole === 'supplier' && linkedProducer) {
                             return needsSupplierDashboardAction(s, linkedProducer.id);
@@ -2118,12 +2138,12 @@ export default function App() {
                   )}
 
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-                    <StatCard title="Total Contas" value={accounts.length} icon={Layers} color="orange" />
-                    <StatCard title="Escaladas" value={accounts.filter(a => a.stage === AccountStage.SCALING || a.stage === AccountStage.SCALED).length} icon={TrendingUp} color="green" />
-                    <StatCard title="Violações" value={violations.filter(v => !v.resolved).length} icon={AlertTriangle} color="red" />
+                    <StatCard title="Total Contas" value={dashboardAccounts.length} icon={Layers} color="orange" />
+                    <StatCard title="Escaladas" value={dashboardAccounts.filter(a => a.stage === AccountStage.SCALING || a.stage === AccountStage.SCALED).length} icon={TrendingUp} color="green" />
+                    <StatCard title="Violações" value={dashboardViolations.filter(v => !v.resolved).length} icon={AlertTriangle} color="red" />
                     <StatCard 
                       title="Postados Hoje" 
-                      value={`${schedule.filter(s => s.date === getLocalDateString() && s.status === ScheduleStatus.POSTED).length} / ${schedule.filter(s => s.date === getLocalDateString()).length}`} 
+                      value={`${supplierDashboardSchedule.filter(s => s.date === getLocalDateString() && s.status === ScheduleStatus.POSTED).length} / ${supplierDashboardSchedule.filter(s => s.date === getLocalDateString()).length}`} 
                       icon={Calendar} 
                       color="blue" 
                     />
@@ -2160,9 +2180,9 @@ export default function App() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-[#222]">
-                            {accounts.slice(0, 8).map((acc) => {
+                            {dashboardAccounts.slice(0, 8).map((acc) => {
                               const todayStr = getLocalDateString();
-                              const postsToday = schedule.filter(s => s.accountId === acc.id && s.date === todayStr && s.status === ScheduleStatus.POSTED).length;
+                              const postsToday = supplierDashboardSchedule.filter(s => s.accountId === acc.id && s.date === todayStr && s.status === ScheduleStatus.POSTED).length;
 
                               return (
                                 <tr key={acc.id} className="hover:bg-[#1a1a1a] transition-colors">
@@ -7212,7 +7232,7 @@ function TiktokVideoIdentifier({ tiktokLinks, user, viewMode, linkedProducer, pe
 
 function Planner({ schedule, accounts, products, user, viewMode, producers, tiktokLinks = [] }: { schedule: ScheduleItem[], accounts: Account[], products: Product[], user: FirebaseUser, viewMode: ViewMode, producers: Producer[], tiktokLinks?: TiktokLink[] }) {
   const [showAdd, setShowAdd] = useState(false);
-  const [newItem, setNewItem] = useState({ date: getLocalDateString(), accountId: '', productId: '', producerId: '', status: ScheduleStatus.PLANNED });
+  const [newItem, setNewItem] = useState({ date: getLocalDateString(), accountId: '', productId: '', producerId: '', supplierId: '', status: ScheduleStatus.PLANNED });
   const [postCount, setPostCount] = useState(1);
   const [distributionType, setDistributionType] = useState<'same' | 'different'>('same');
   const [assignments, setAssignments] = useState<{ productId: string, count: number }[]>([]);
@@ -7242,6 +7262,12 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
   const sessionAssignmentsRef = useRef<Record<string, string>>({});
 
   const [uploadingItem, setUploadingItem] = useState<{ id: string, type: 'audio' | 'video' } | null>(null);
+  const activeSuppliers = useMemo(() => {
+    return producers.filter(p => !p.hidden && (p.role === 'supplier' || getProducerLinkedRole(p) === 'supplier'));
+  }, [producers]);
+  const activeEditors = useMemo(() => {
+    return producers.filter(p => !p.hidden && (p.role === 'editor' || getProducerLinkedRole(p) === 'editor'));
+  }, [producers]);
 
   const handleSendSupplierChat = async (customMessage?: string) => {
     const messageToSend = (customMessage || chatInput).trim();
@@ -7299,7 +7325,7 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
     const inputs = slotInputs[item.id] || { audioUrl: '', videoUrl: '', notes: '' };
     const hasTypedLink = !!inputs.audioUrl.trim() || !!inputs.videoUrl.trim();
     const hasMaterial = normalizeFileList(item.audioMaterial).length > 0 || normalizeFileList(item.videoMaterial).length > 0;
-    return getSupplierUploadBlockMessages(hasTypedLink || hasMaterial, !!item.producerId);
+    return getSupplierUploadBlockMessages(hasTypedLink || hasMaterial, true);
   };
 
   const handleUploadFile = async (itemId: string, type: 'audio' | 'video', file: File) => {
@@ -7435,7 +7461,7 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
       const prod = products.find(p => p.id === item.productId);
       if (!prod) return;
 
-      const isMyTask = !item.supplierId || item.supplierId === linkedProducer.id;
+      const isMyTask = isScheduleAssignedToSupplier(item, linkedProducer.id);
       if (!isMyTask) return;
 
       if (!groups[item.productId]) {
@@ -7475,9 +7501,6 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
       // Automatically assign an editor (producerId) if not already set
       let assignedEditorId = item.producerId;
       if (!assignedEditorId) {
-        // Get all active editors in the system
-        const activeEditors = producers.filter(p => isProducerAvailableForRole(p, 'editor'));
-
         // Get editors that are explicitly linked to this product (via linkedProductIds)
         const productEditors = activeEditors.filter(p => Array.isArray(p.linkedProductIds) && p.linkedProductIds.includes(item.productId));
 
@@ -8315,13 +8338,33 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
       const sameDayItems = schedule.filter(s => s.date === newItem.date);
       const maxIndex = sameDayItems.reduce((max, s) => Math.max(max, s.dailyIndex || 0), 0);
       let nextIndex = maxIndex + 1;
+      const supplierBatchLoad: Record<string, number> = {};
+      const getSupplierLoad = (supplierId: string) => {
+        const existingLoad = schedule.filter(s =>
+          s.supplierId === supplierId &&
+          s.status !== ScheduleStatus.POSTED &&
+          s.status !== ScheduleStatus.CANCELLED
+        ).length;
+        return existingLoad + (supplierBatchLoad[supplierId] || 0);
+      };
+      const chooseSupplierId = () => {
+        if (newItem.supplierId) return newItem.supplierId;
+        if (activeSuppliers.length === 0) return '';
+        const workloads = activeSuppliers.map(supplier => ({ supplier, load: getSupplierLoad(supplier.id) }));
+        const minLoad = Math.min(...workloads.map(w => w.load));
+        const selected = workloads.find(w => w.load === minLoad)?.supplier;
+        if (!selected) return '';
+        supplierBatchLoad[selected.id] = (supplierBatchLoad[selected.id] || 0) + 1;
+        return selected.id;
+      };
 
       // Create entries in parallel
       await Promise.all(itemsToCreate.map((item, idx) => 
         addDoc(collection(db, 'schedule'), {
           ...newItem,
           productId: item.productId,
-          producerId: newItem.producerId || '',
+          producerId: '',
+          supplierId: chooseSupplierId(),
           scope: viewMode === ViewMode.COMPANY ? 'COMPANY' : 'PERSONAL',
           userId: user.uid,
           dailyIndex: nextIndex + idx,
@@ -8593,16 +8636,16 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
 
             {viewMode === ViewMode.COMPANY && (
               <div className="space-y-2 lg:col-span-1">
-                <label className="text-xs font-black text-gray-500 uppercase tracking-widest px-1">Atribuir Responsável</label>
+                <label className="text-xs font-black text-gray-500 uppercase tracking-widest px-1">Atribuir Fornecedor</label>
                 <div className="relative">
                   <UserIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                   <select 
                     className="w-full bg-[#0a0a0a] border border-[#222] rounded-2xl pl-11 pr-4 py-3 text-white outline-none focus:border-orange-500 transition-colors text-sm appearance-none" 
-                    value={newItem.producerId} 
-                    onChange={e => setNewItem({...newItem, producerId: e.target.value})}
+                    value={newItem.supplierId} 
+                    onChange={e => setNewItem({...newItem, supplierId: e.target.value})}
                   >
-                    <option value="">Sem Responsável</option>
-                    {producers.filter(p => isProducerAvailableForRole(p, 'editor')).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    <option value="">Automático</option>
+                    {activeSuppliers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                 </div>
               </div>
