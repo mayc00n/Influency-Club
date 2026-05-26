@@ -4662,7 +4662,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
 
     const firstUncompletedIdx = allProductItems.findIndex(item => !isSupplierDone(item));
     if (userRole === 'editor') return allProductItems;
-    if (firstUncompletedIdx !== -1) return allProductItems.slice(0, firstUncompletedIdx + 1);
+    if (userRole === 'supplier' && firstUncompletedIdx !== -1) return [allProductItems[firstUncompletedIdx]];
 
     const virtualItem: ScheduleItem = {
       id: 'virtual-draft-item',
