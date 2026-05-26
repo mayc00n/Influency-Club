@@ -3846,6 +3846,9 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
 
   const linkedProducer = producers.find(p => isProducerLinkedToUser(p, user));
   const userRole = getProducerLinkedRole(linkedProducer);
+  const activeLinkedEditors = useMemo(() => {
+    return producers.filter(p => !p.hidden && hasProducerUserLink(p) && getProducerLinkedRole(p) === 'editor');
+  }, [producers]);
   const pendingReferenceStorageKey = linkedProducer ? `pending_reference_link_${viewMode || 'PERSONAL'}_${linkedProducer.id}` : null;
   const activePendingReferenceLink = pendingReferenceLink || findPendingSupplierLink(tiktokLinks, pendingReferenceStorageKey ? localStorage.getItem(pendingReferenceStorageKey) : null, linkedProducer?.id) || null;
 
@@ -4096,6 +4099,21 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
 
   const hasAnyMaterial = (item: ScheduleItem) => hasEditableMaterial(item);
 
+  const chooseLeastLoadedEditorId = () => {
+    if (activeLinkedEditors.length === 0) return '';
+
+    const workloads = activeLinkedEditors.map(editor => ({
+      editor,
+      load: schedule.filter(s =>
+        s.producerId === editor.id &&
+        s.status === ScheduleStatus.EDITING &&
+        !normalizeFileList(s.finishedVideoUrl).length
+      ).length
+    }));
+    const minLoad = Math.min(...workloads.map(w => w.load));
+    return workloads.find(w => w.load === minLoad)?.editor.id || '';
+  };
+
   const handleUploadFile = async (itemId: string, type: 'audio' | 'video' | 'finished', file: File) => {
     setUploadingItem({ id: itemId, type });
     try {
@@ -4105,12 +4123,15 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
       let referenceLinkToConsume = shouldRequireReference ? activePendingReferenceLink : null;
 
       if (itemId === 'virtual-draft-item') {
-        const selectedEditorId = productionEditorSelections[itemId] || (activeProducerId === 'unassigned' ? '' : (activeProducerId || ''));
         const blockMessages = shouldRequireReference
-          ? getSupplierUploadBlockMessages(!!referenceLinkToConsume, !!selectedEditorId)
+          ? getSupplierUploadBlockMessages(!!referenceLinkToConsume, true)
           : [];
         if (blockMessages.length > 0) {
           alert(blockMessages.join('\n'));
+          return;
+        }
+        if (shouldRequireReference && activeLinkedEditors.length === 0) {
+          alert('Nenhum editor ativo vinculado disponivel para receber este material.');
           return;
         }
         const alreadyNumberedItems = schedule.filter(s => s.date === todayStr && s.dailyIndex && ( (Array.isArray(s.audioMaterial) && s.audioMaterial.length > 0) || (Array.isArray(s.videoMaterial) && s.videoMaterial.length > 0) ));
@@ -4121,7 +4142,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
           date: todayStr,
           accountId: null,
           productId: activeProductId || '',
-          producerId: selectedEditorId || null,
+          producerId: null,
           supplierId: linkedProducer?.id || null,
           status: ScheduleStatus.PLANNED,
           userId: user.uid,
@@ -4141,7 +4162,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
           date: todayStr,
           accountId: '',
           productId: activeProductId || '',
-          producerId: selectedEditorId,
+          producerId: '',
           supplierId: linkedProducer?.id || '',
           status: ScheduleStatus.PLANNED,
           audioMaterial: [],
@@ -4154,10 +4175,13 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
 
       if (!item) return;
       if (shouldRequireReference) {
-        const effectiveProducerId = productionEditorSelections[targetItemId] || item.producerId;
-        const blockMessages = getSupplierUploadBlockMessages(!!item.creatorLinkId || !!referenceLinkToConsume, !!effectiveProducerId);
+        const blockMessages = getSupplierUploadBlockMessages(!!item.creatorLinkId || !!referenceLinkToConsume, true);
         if (blockMessages.length > 0) {
           alert(blockMessages.join('\n'));
+          return;
+        }
+        if (!item.producerId && activeLinkedEditors.length === 0) {
+          alert('Nenhum editor ativo vinculado disponivel para receber este material.');
           return;
         }
       }
@@ -4251,6 +4275,12 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
         updates.materialAddedAt = new Date().toISOString();
         if (!item.status || item.status === ScheduleStatus.PLANNED) {
           updates.status = ScheduleStatus.EDITING;
+        }
+        if (userRole === 'supplier' && !item.producerId) {
+          const assignedEditorId = chooseLeastLoadedEditorId();
+          if (assignedEditorId) {
+            updates.producerId = assignedEditorId;
+          }
         }
 
         if (!item.productionCode) {
@@ -4637,7 +4667,9 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
   const renderEditorLinkSelect = (item: ScheduleItem, className = '') => {
     const selectedEditorId = getProductionItemEditorId(item);
 
-    if (userRole !== 'supplier' && selectedEditorId) {
+    if (userRole === 'supplier') return null;
+
+    if (selectedEditorId) {
       const linkedEditor = producers.find(p => p.id === selectedEditorId);
       return (
         <p className={`text-[10px] text-gray-500 font-black uppercase tracking-wider ${className}`}>
@@ -4994,7 +5026,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                       const supplierUploadBlockMessages = userRole === 'supplier'
                         ? getSupplierUploadBlockMessages(
                             !!item.creatorLinkId || !!activePendingReferenceLink,
-                            !!getProductionItemEditorId(item)
+                            true
                           )
                         : [];
                       const canUploadSupplierMaterial = userRole !== 'supplier' || supplierUploadBlockMessages.length === 0;
@@ -5039,10 +5071,12 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                               <p className="text-[9px] font-black uppercase tracking-widest text-gray-600 mb-1">Conta</p>
                               <p className="text-xs text-gray-300 font-bold uppercase break-words">{acc?.name || 'Sem Conta'}</p>
                             </div>
-                            <div className="bg-[#0d0d0d] border border-[#222] rounded-2xl p-3 min-w-0">
-                              <p className="text-[9px] font-black uppercase tracking-widest text-gray-600 mb-2">Editor Vinculado</p>
-                              {renderEditorLinkSelect(item)}
-                            </div>
+                            {userRole !== 'supplier' && (
+                              <div className="bg-[#0d0d0d] border border-[#222] rounded-2xl p-3 min-w-0">
+                                <p className="text-[9px] font-black uppercase tracking-widest text-gray-600 mb-2">Editor Vinculado</p>
+                                {renderEditorLinkSelect(item)}
+                              </div>
+                            )}
                           </div>
 
                           {userRole === 'supplier' ? (
@@ -5196,7 +5230,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                         const supplierUploadBlockMessages = userRole === 'supplier'
                           ? getSupplierUploadBlockMessages(
                               !!item.creatorLinkId || !!activePendingReferenceLink,
-                              !!getProductionItemEditorId(item)
+                              true
                             )
                           : [];
                         const canUploadSupplierMaterial = userRole !== 'supplier' || supplierUploadBlockMessages.length === 0;
@@ -5226,7 +5260,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                      )}
                                    </div>
                                    <p className="text-[10px] text-gray-500 font-bold uppercase mt-0.5">{acc?.name || 'Sem Conta'}</p>
-                                   {(userRole === 'supplier' || !item.producerId) && (
+                                   {userRole !== 'supplier' && !item.producerId && (
                                      <div className="mt-2 text-left">
                                        {renderEditorLinkSelect(item, 'max-w-[180px] py-1.5 px-2.5')}
                                      </div>
@@ -7266,7 +7300,7 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
     return producers.filter(p => !p.hidden && (p.role === 'supplier' || getProducerLinkedRole(p) === 'supplier'));
   }, [producers]);
   const activeEditors = useMemo(() => {
-    return producers.filter(p => !p.hidden && (p.role === 'editor' || getProducerLinkedRole(p) === 'editor'));
+    return producers.filter(p => !p.hidden && hasProducerUserLink(p) && getProducerLinkedRole(p) === 'editor');
   }, [producers]);
 
   const handleSendSupplierChat = async (customMessage?: string) => {
