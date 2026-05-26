@@ -144,12 +144,18 @@ function hasEditableMaterial(item: ScheduleItem): boolean {
   ].some(value => normalizeFileList(value).length > 0);
 }
 
-function hasSupplierPreparedMaterial(item: ScheduleItem): boolean {
+function hasSupplierAudioMaterial(item: ScheduleItem): boolean {
   const rawItem = item as any;
   return [
     item.audioMaterial,
-    item.videoMaterial,
     rawItem.baseAudio,
+  ].some(value => normalizeFileList(value).length > 0);
+}
+
+function hasSupplierVideoMaterial(item: ScheduleItem): boolean {
+  const rawItem = item as any;
+  return [
+    item.videoMaterial,
     rawItem.rawMaterials,
     rawItem.uploadedFiles,
     rawItem.materials,
@@ -158,15 +164,22 @@ function hasSupplierPreparedMaterial(item: ScheduleItem): boolean {
   ].some(value => normalizeFileList(value).length > 0);
 }
 
+function hasSupplierPreparedMaterial(item: ScheduleItem): boolean {
+  return hasSupplierAudioMaterial(item) && hasSupplierVideoMaterial(item);
+}
+
+function hasPartialSupplierMaterial(item: ScheduleItem): boolean {
+  return !hasSupplierPreparedMaterial(item) && (hasSupplierAudioMaterial(item) || hasSupplierVideoMaterial(item));
+}
+
 function isScheduleAssignedToSupplier(item: ScheduleItem, supplierId?: string): boolean {
   return !!supplierId && item.supplierId === supplierId;
 }
 
 function needsSupplierDashboardAction(item: ScheduleItem, supplierId?: string): boolean {
   if (!isScheduleAssignedToSupplier(item, supplierId)) return false;
-  if (item.status !== ScheduleStatus.PLANNED) return false;
   if (hasSupplierPreparedMaterial(item)) return false;
-  return true;
+  return item.status !== ScheduleStatus.POSTED && item.status !== ScheduleStatus.CANCELLED;
 }
 
 function getSupplierUploadBlockMessages(hasContentLink: boolean, hasLinkedEditor: boolean): string[] {
@@ -1837,7 +1850,7 @@ export default function App() {
 
                     const supplierItems = supplierDashboardSchedule;
                     const supplierActionItems = supplierItems.filter(s => needsSupplierDashboardAction(s, linkedProducer.id));
-                    const preparados = supplierItems.filter(s => hasSupplierPreparedMaterial(s) || s.status !== ScheduleStatus.PLANNED).length;
+                    const preparados = supplierItems.filter(hasSupplierPreparedMaterial).length;
                     const aPreparar = supplierActionItems.length;
                     const supplierPendentes = supplierActionItems.length;
 
@@ -3864,10 +3877,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
   }, [pendingReferenceStorageKey, pendingReferenceLink, tiktokLinks, linkedProducer?.id]);
 
   const isSupplierDone = (item: ScheduleItem) => {
-    const hasAudio = Array.isArray(item.audioMaterial) ? item.audioMaterial.length > 0 : !!item.audioMaterial;
-    const hasVideo = Array.isArray(item.videoMaterial) ? item.videoMaterial.length > 0 : !!item.videoMaterial;
-    const isCompletedStatus = item.status === ScheduleStatus.PRODUCED || item.status === ScheduleStatus.POSTED;
-    return (hasAudio && hasVideo) || isCompletedStatus;
+    return hasSupplierPreparedMaterial(item);
   };
 
   const handleLinkUser = async () => {
@@ -4130,7 +4140,8 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
           alert(blockMessages.join('\n'));
           return;
         }
-        if (shouldRequireReference && activeLinkedEditors.length === 0) {
+        const virtualUploadWouldComplete = shouldRequireReference && ((type === 'audio' || hasSupplierAudioMaterial(item as ScheduleItem)) && (type === 'video' || hasSupplierVideoMaterial(item as ScheduleItem)));
+        if (virtualUploadWouldComplete && activeLinkedEditors.length === 0) {
           alert('Nenhum editor ativo vinculado disponivel para receber este material.');
           return;
         }
@@ -4174,13 +4185,18 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
       }
 
       if (!item) return;
+      if (shouldRequireReference && isSupplierDone(item)) {
+        alert('Este item ja foi concluido.');
+        return;
+      }
       if (shouldRequireReference) {
         const blockMessages = getSupplierUploadBlockMessages(!!item.creatorLinkId || !!referenceLinkToConsume, true);
         if (blockMessages.length > 0) {
           alert(blockMessages.join('\n'));
           return;
         }
-        if (!item.producerId && activeLinkedEditors.length === 0) {
+        const uploadWouldComplete = (type === 'audio' || hasSupplierAudioMaterial(item)) && (type === 'video' || hasSupplierVideoMaterial(item));
+        if (uploadWouldComplete && !item.producerId && activeLinkedEditors.length === 0) {
           alert('Nenhum editor ativo vinculado disponivel para receber este material.');
           return;
         }
@@ -4272,11 +4288,14 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
         updates.status = ScheduleStatus.PRODUCED;
         updates.producedAt = new Date().toISOString();
       } else {
+        const willHaveCompleteSupplierMaterials = userRole === 'supplier'
+          ? ((type === 'audio' || hasSupplierAudioMaterial(item)) && (type === 'video' || hasSupplierVideoMaterial(item)))
+          : true;
         updates.materialAddedAt = new Date().toISOString();
-        if (!item.status || item.status === ScheduleStatus.PLANNED) {
+        if (willHaveCompleteSupplierMaterials && (!item.status || item.status === ScheduleStatus.PLANNED)) {
           updates.status = ScheduleStatus.EDITING;
         }
-        if (userRole === 'supplier' && !item.producerId) {
+        if (userRole === 'supplier' && willHaveCompleteSupplierMaterials && !item.producerId) {
           const assignedEditorId = chooseLeastLoadedEditorId();
           if (assignedEditorId) {
             updates.producerId = assignedEditorId;
@@ -4603,7 +4622,9 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
   const getVisibleProductionItems = () => {
     const allProductItems = pendingProduction
       .filter(item => {
-        const condProducer = activeProducerId === 'unassigned' ? !item.producerId : item.producerId === activeProducerId;
+        const condProducer = userRole === 'supplier'
+          ? item.supplierId === linkedProducer?.id
+          : (activeProducerId === 'unassigned' ? !item.producerId : item.producerId === activeProducerId);
         const condProduct = item.productId === activeProductId;
         const condMaterial = userRole === 'editor' ? hasEditableMaterial(item) : true;
         return condProducer && condProduct && condMaterial;
@@ -4704,6 +4725,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
     supplierUploadBlockTitle: string
   ) => {
     const isAudio = type === 'audio';
+    const supplierDone = userRole === 'supplier' && isSupplierDone(item);
     const Icon = isAudio ? Music : Video;
     const colorClass = isAudio ? 'text-blue-400' : 'text-purple-400';
     const hoverClass = isAudio ? 'hover:border-blue-500/50 hover:bg-blue-500/5' : 'hover:border-purple-500/50 hover:bg-purple-500/5';
@@ -4764,13 +4786,15 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                     <a href={url} target="_blank" rel="noreferrer" className={`p-1 ${isAudio ? 'hover:bg-blue-500/10' : 'hover:bg-purple-500/10'} rounded transition-colors`} title="Baixar">
                       <Download className="w-3.5 h-3.5" />
                     </a>
-                    <button
-                      onClick={() => handleDeleteAsset(item, type, url)}
-                      className="p-1 hover:bg-red-500/10 rounded text-red-500 transition-colors cursor-pointer"
-                      title="Apagar"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {!supplierDone && (
+                      <button
+                        onClick={() => handleDeleteAsset(item, type, url)}
+                        className="p-1 hover:bg-red-500/10 rounded text-red-500 transition-colors cursor-pointer"
+                        title="Apagar"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -5023,14 +5047,15 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                       const videos = Array.isArray(item.videoMaterial) ? item.videoMaterial : (item.videoMaterial ? [item.videoMaterial] : []);
                       const finishedVideos = Array.isArray(item.finishedVideoUrl) ? item.finishedVideoUrl : (item.finishedVideoUrl ? [item.finishedVideoUrl] : []);
                       const hasFinished = finishedVideos.length > 0;
+                      const supplierDone = userRole === 'supplier' && isSupplierDone(item);
                       const supplierUploadBlockMessages = userRole === 'supplier'
                         ? getSupplierUploadBlockMessages(
                             !!item.creatorLinkId || !!activePendingReferenceLink,
                             true
                           )
                         : [];
-                      const canUploadSupplierMaterial = userRole !== 'supplier' || supplierUploadBlockMessages.length === 0;
-                      const supplierUploadBlockTitle = supplierUploadBlockMessages.join(' | ');
+                      const canUploadSupplierMaterial = userRole !== 'supplier' || (!supplierDone && supplierUploadBlockMessages.length === 0);
+                      const supplierUploadBlockTitle = supplierDone ? 'Item concluido' : supplierUploadBlockMessages.join(' | ');
 
                       return (
                         <div key={item.id} className="bg-[#141414] border border-[#222] rounded-3xl p-4 min-[360px]:p-5 space-y-5 overflow-hidden">
@@ -5049,8 +5074,12 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                   </span>
                                 )}
                                 {userRole === 'supplier' && !isSupplierDone(item) && (
-                                  <span className="inline-flex items-center gap-1 bg-orange-500/15 text-orange-400 border border-orange-500/20 px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider">
-                                    Pendente
+                                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                                    hasPartialSupplierMaterial(item)
+                                      ? 'bg-blue-500/15 text-blue-400 border border-blue-500/20'
+                                      : 'bg-orange-500/15 text-orange-400 border border-orange-500/20'
+                                  }`}>
+                                    {hasPartialSupplierMaterial(item) ? 'Parcial' : 'Pendente'}
                                   </span>
                                 )}
                                 {userRole !== 'supplier' && (
@@ -5227,14 +5256,15 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                         const audios = Array.isArray(item.audioMaterial) ? item.audioMaterial : (item.audioMaterial ? [item.audioMaterial] : []);
                         const videos = Array.isArray(item.videoMaterial) ? item.videoMaterial : (item.videoMaterial ? [item.videoMaterial] : []);
                         const finishedVideos = Array.isArray(item.finishedVideoUrl) ? item.finishedVideoUrl : (item.finishedVideoUrl ? [item.finishedVideoUrl] : []);
+                        const supplierDone = userRole === 'supplier' && isSupplierDone(item);
                         const supplierUploadBlockMessages = userRole === 'supplier'
                           ? getSupplierUploadBlockMessages(
                               !!item.creatorLinkId || !!activePendingReferenceLink,
                               true
                             )
                           : [];
-                        const canUploadSupplierMaterial = userRole !== 'supplier' || supplierUploadBlockMessages.length === 0;
-                        const supplierUploadBlockTitle = supplierUploadBlockMessages.join(' | ');
+                        const canUploadSupplierMaterial = userRole !== 'supplier' || (!supplierDone && supplierUploadBlockMessages.length === 0);
+                        const supplierUploadBlockTitle = supplierDone ? 'Item concluido' : supplierUploadBlockMessages.join(' | ');
 
                         return (
                           <tr key={item.id} className="hover:bg-[#1a1a1a]/50 transition-colors">
@@ -5254,8 +5284,12 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                        </span>
                                      )}
                                      {userRole === 'supplier' && !isSupplierDone(item) && (
-                                       <span className="inline-flex items-center gap-1 bg-orange-500/15 text-orange-400 border border-orange-500/20 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider animate-pulse">
-                                         Pendente
+                                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                                         hasPartialSupplierMaterial(item)
+                                           ? 'bg-blue-500/15 text-blue-400 border border-blue-500/20'
+                                           : 'bg-orange-500/15 text-orange-400 border border-orange-500/20 animate-pulse'
+                                       }`}>
+                                         {hasPartialSupplierMaterial(item) ? 'Parcial' : 'Pendente'}
                                        </span>
                                      )}
                                    </div>
@@ -7357,15 +7391,42 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
 
   const getPlannerSendBlockMessages = (item: ScheduleItem) => {
     const inputs = slotInputs[item.id] || { audioUrl: '', videoUrl: '', notes: '' };
-    const hasTypedLink = !!inputs.audioUrl.trim() || !!inputs.videoUrl.trim();
-    const hasMaterial = normalizeFileList(item.audioMaterial).length > 0 || normalizeFileList(item.videoMaterial).length > 0;
-    return getSupplierUploadBlockMessages(hasTypedLink || hasMaterial, true);
+    const messages: string[] = [];
+    const hasAudio = !!inputs.audioUrl.trim() || hasSupplierAudioMaterial(item);
+    const hasVideo = !!inputs.videoUrl.trim() || hasSupplierVideoMaterial(item);
+    if (!hasAudio) messages.push('Adicione o audio base');
+    if (!hasVideo) messages.push('Adicione o video/material bruto');
+    return messages;
+  };
+
+  const chooseLeastLoadedPlannerEditorId = (item: ScheduleItem, indexOnDay: number) => {
+    if (activeEditors.length === 0) return '';
+
+    const productEditors = activeEditors.filter(p => Array.isArray(p.linkedProductIds) && p.linkedProductIds.includes(item.productId));
+    const candidatePool = productEditors.length > 0 ? productEditors : activeEditors;
+    const sortedPool = [...candidatePool].sort((a, b) => a.id.localeCompare(b.id));
+    const getLoad = (editorId: string) => {
+      const scheduleLoad = schedule.filter(s => s.producerId === editorId && s.status === ScheduleStatus.EDITING).length;
+      const sessionCount = Object.entries(sessionAssignmentsRef.current).filter(([id, assignedId]) => {
+        if (assignedId !== editorId) return false;
+        return !schedule.some(s => s.id === id && s.producerId === editorId && s.status === ScheduleStatus.EDITING);
+      }).length;
+      return scheduleLoad + sessionCount;
+    };
+    const workloads = sortedPool.map(editor => ({ editor, load: getLoad(editor.id) }));
+    const minLoad = Math.min(...workloads.map(w => w.load));
+    const bestCandidates = workloads.filter(w => w.load === minLoad).map(w => w.editor);
+    return bestCandidates[indexOnDay % bestCandidates.length]?.id || '';
   };
 
   const handleUploadFile = async (itemId: string, type: 'audio' | 'video', file: File) => {
     try {
       const item = schedule.find(s => s.id === itemId);
       if (!item) return;
+      if (hasSupplierPreparedMaterial(item)) {
+        alert('Este item ja foi concluido.');
+        return;
+      }
 
       const blockMessages = getPlannerUploadBlockMessages(item, type);
       if (blockMessages.length > 0) {
@@ -7440,8 +7501,24 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
       
       const field = type === 'audio' ? 'audioMaterial' : 'videoMaterial';
       const updates: any = { [field]: arrayUnion({ url, name: savedName }) };
+      const willHaveCompleteSupplierMaterials = (type === 'audio' || hasSupplierAudioMaterial(item)) && (type === 'video' || hasSupplierVideoMaterial(item));
+      if (willHaveCompleteSupplierMaterials && !item.producerId && activeEditors.length === 0) {
+        alert('Nenhum editor ativo vinculado disponivel para receber este material.');
+        return;
+      }
       
       updates.materialAddedAt = new Date().toISOString();
+      if (willHaveCompleteSupplierMaterials) {
+        const dateParts = item.date.split('-');
+        const formattedDate = dateParts.length === 3 ? `${dateParts[2]}/${dateParts[1]}` : item.date;
+        const assignedEditorId = item.producerId || chooseLeastLoadedPlannerEditorId(item, dIndex - 1);
+        updates.status = ScheduleStatus.EDITING;
+        updates.videoCode = item.videoCode || `${String(dIndex).padStart(3, '0')}-${formattedDate}`;
+        if (assignedEditorId) {
+          updates.producerId = assignedEditorId;
+          sessionAssignmentsRef.current[item.id] = assignedEditorId;
+        }
+      }
       if (!item.productionCode) {
         updates.productionCode = buildProductionCode(item, accounts, products, schedule);
       }
@@ -7771,7 +7848,9 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
                         <div className="space-y-4">
                           {sortedItems.map((item, idx) => {
                             const countCode = `${String(idx + 1).padStart(3, '0')}`;
-                            const isPlanned = item.status === ScheduleStatus.PLANNED;
+                            const supplierDone = hasSupplierPreparedMaterial(item);
+                            const supplierPartial = hasPartialSupplierMaterial(item);
+                            const isPlanned = item.status === ScheduleStatus.PLANNED && !supplierDone;
                             const inputs = slotInputs[item.id] || { audioUrl: '', videoUrl: '', notes: '' };
                             const isCurrentlyUploading = uploadingItem?.id === item.id;
                             const audioUploadBlockMessages = getPlannerUploadBlockMessages(item, 'audio');
@@ -7784,8 +7863,12 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
                                   <span className="text-sm font-black text-white italic">Fração #{countCode}</span>
                                   
                                   {isPlanned ? (
-                                    <span className="text-[10px] font-black uppercase tracking-widest bg-yellow-500/10 text-yellow-500 border border-yellow-500/20 px-3 py-1 rounded-full">
-                                      Pendente
+                                    <span className={`text-[10px] font-black uppercase tracking-widest border px-3 py-1 rounded-full ${
+                                      supplierPartial
+                                        ? 'bg-blue-500/10 text-blue-500 border-blue-500/20'
+                                        : 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'
+                                    }`}>
+                                      {supplierPartial ? 'Parcial' : 'Pendente'}
                                     </span>
                                   ) : (
                                     <div className="flex items-center gap-2">
@@ -7843,14 +7926,16 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
                                               >
                                                 <Play className="w-3.5 h-3.5" />
                                               </button>
-                                              <button 
-                                                type="button"
-                                                onClick={() => handleDeleteMaterial(item.id, 'audio', mIdx)}
-                                                className="text-gray-500 hover:text-red-500 transition-colors"
-                                                title="Remover"
-                                              >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                              </button>
+                                              {!hasSupplierPreparedMaterial(item) && (
+                                                <button 
+                                                  type="button"
+                                                  onClick={() => handleDeleteMaterial(item.id, 'audio', mIdx)}
+                                                  className="text-gray-500 hover:text-red-500 transition-colors"
+                                                  title="Remover"
+                                                >
+                                                  <Trash2 className="w-3.5 h-3.5" />
+                                                </button>
+                                              )}
                                             </div>
                                           </div>
                                         ))}
@@ -7892,14 +7977,16 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
                                               >
                                                 <Play className="w-3.5 h-3.5" />
                                               </button>
-                                              <button 
-                                                type="button"
-                                                onClick={() => handleDeleteMaterial(item.id, 'video', mIdx)}
-                                                className="text-gray-500 hover:text-red-500 transition-colors"
-                                                title="Remover"
-                                              >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                              </button>
+                                              {!hasSupplierPreparedMaterial(item) && (
+                                                <button 
+                                                  type="button"
+                                                  onClick={() => handleDeleteMaterial(item.id, 'video', mIdx)}
+                                                  className="text-gray-500 hover:text-red-500 transition-colors"
+                                                  title="Remover"
+                                                >
+                                                  <Trash2 className="w-3.5 h-3.5" />
+                                                </button>
+                                              )}
                                             </div>
                                           </div>
                                         ))}
@@ -7989,22 +8076,6 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
                                       </div>
                                     )}
 
-                                    <button
-                                      onClick={async () => {
-                                        try {
-                                          await updateDoc(doc(db, 'schedule', item.id), {
-                                            status: ScheduleStatus.PLANNED,
-                                            videoCode: null
-                                          });
-                                        } catch (err: any) {
-                                          alert('Erro ao desfazer envio: ' + err.message);
-                                        }
-                                      }}
-                                      className="w-full mt-2 py-2.5 bg-[#141414] border border-[#222] hover:border-orange-500/30 text-orange-500 hover:text-orange-400 font-bold text-[10px] uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2"
-                                    >
-                                      <RotateCcw className="w-3.5 h-3.5" />
-                                      Desfazer Envio
-                                    </button>
                                   </div>
                                 )}
                               </div>
