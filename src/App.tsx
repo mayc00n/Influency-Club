@@ -7318,7 +7318,7 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
   const getPlannerUploadBlockMessages = (item: ScheduleItem, type: 'audio' | 'video') => {
     const inputs = slotInputs[item.id] || { audioUrl: '', videoUrl: '', notes: '' };
     const hasContentLink = type === 'audio' ? !!inputs.audioUrl.trim() : !!inputs.videoUrl.trim();
-    return getSupplierUploadBlockMessages(hasContentLink, !!item.producerId);
+    return getSupplierUploadBlockMessages(hasContentLink, true);
   };
 
   const getPlannerSendBlockMessages = (item: ScheduleItem) => {
