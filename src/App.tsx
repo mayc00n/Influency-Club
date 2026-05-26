@@ -168,12 +168,16 @@ function hasSupplierPreparedMaterial(item: ScheduleItem): boolean {
   return hasSupplierAudioMaterial(item) && hasSupplierVideoMaterial(item);
 }
 
+function isSupplierPreparationSubmitted(item: ScheduleItem): boolean {
+  return hasSupplierPreparedMaterial(item) && !!item.producerId && item.status !== ScheduleStatus.PLANNED;
+}
+
 function hasPartialSupplierMaterial(item: ScheduleItem): boolean {
-  return !hasSupplierPreparedMaterial(item) && (hasSupplierAudioMaterial(item) || hasSupplierVideoMaterial(item));
+  return !isSupplierPreparationSubmitted(item) && (hasSupplierAudioMaterial(item) || hasSupplierVideoMaterial(item));
 }
 
 function getSupplierPreparationRank(item: ScheduleItem): number {
-  if (hasSupplierPreparedMaterial(item)) return 0;
+  if (isSupplierPreparationSubmitted(item)) return 0;
   if (hasPartialSupplierMaterial(item)) return 1;
   return 2;
 }
@@ -184,7 +188,7 @@ function isScheduleAssignedToSupplier(item: ScheduleItem, supplierId?: string): 
 
 function needsSupplierDashboardAction(item: ScheduleItem, supplierId?: string): boolean {
   if (!isScheduleAssignedToSupplier(item, supplierId)) return false;
-  if (hasSupplierPreparedMaterial(item)) return false;
+  if (isSupplierPreparationSubmitted(item)) return false;
   return item.status !== ScheduleStatus.POSTED && item.status !== ScheduleStatus.CANCELLED;
 }
 
@@ -1856,7 +1860,7 @@ export default function App() {
 
                     const supplierItems = supplierDashboardSchedule;
                     const supplierActionItems = supplierItems.filter(s => needsSupplierDashboardAction(s, linkedProducer.id));
-                    const preparados = supplierItems.filter(hasSupplierPreparedMaterial).length;
+                    const preparados = supplierItems.filter(isSupplierPreparationSubmitted).length;
                     const aPreparar = supplierActionItems.length;
                     const supplierPendentes = supplierActionItems.length;
 
@@ -3883,7 +3887,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
   }, [pendingReferenceStorageKey, pendingReferenceLink, tiktokLinks, linkedProducer?.id]);
 
   const isSupplierDone = (item: ScheduleItem) => {
-    return hasSupplierPreparedMaterial(item);
+    return isSupplierPreparationSubmitted(item);
   };
 
   const handleLinkUser = async () => {
@@ -4130,6 +4134,31 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
     return workloads.find(w => w.load === minLoad)?.editor.id || '';
   };
 
+  const handleCompleteSupplierPreparation = async (item: ScheduleItem) => {
+    if (!hasSupplierPreparedMaterial(item)) {
+      alert('Envie áudio e vídeo antes de concluir.');
+      return;
+    }
+    if (isSupplierDone(item)) return;
+
+    const assignedEditorId = item.producerId || chooseLeastLoadedEditorId();
+    if (!assignedEditorId) {
+      alert('Nenhum editor ativo vinculado disponivel para receber este material.');
+      return;
+    }
+
+    try {
+      await updateDoc(doc(db, 'schedule', item.id), {
+        producerId: assignedEditorId,
+        status: ScheduleStatus.EDITING,
+        materialAddedAt: new Date().toISOString(),
+        productionCode: item.productionCode || buildProductionCode(item, accounts, products, schedule)
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `schedule/${item.id}`);
+    }
+  };
+
   const handleUploadFile = async (itemId: string, type: 'audio' | 'video' | 'finished', file: File) => {
     setUploadingItem({ id: itemId, type });
     try {
@@ -4199,11 +4228,6 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
         const blockMessages = getSupplierUploadBlockMessages(!!item.creatorLinkId || !!referenceLinkToConsume, true);
         if (blockMessages.length > 0) {
           alert(blockMessages.join('\n'));
-          return;
-        }
-        const uploadWouldComplete = (type === 'audio' || hasSupplierAudioMaterial(item)) && (type === 'video' || hasSupplierVideoMaterial(item));
-        if (uploadWouldComplete && !item.producerId && activeLinkedEditors.length === 0) {
-          alert('Nenhum editor ativo vinculado disponivel para receber este material.');
           return;
         }
       }
@@ -4294,18 +4318,9 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
         updates.status = ScheduleStatus.PRODUCED;
         updates.producedAt = new Date().toISOString();
       } else {
-        const willHaveCompleteSupplierMaterials = userRole === 'supplier'
-          ? ((type === 'audio' || hasSupplierAudioMaterial(item)) && (type === 'video' || hasSupplierVideoMaterial(item)))
-          : true;
         updates.materialAddedAt = new Date().toISOString();
-        if (willHaveCompleteSupplierMaterials && (!item.status || item.status === ScheduleStatus.PLANNED)) {
+        if (userRole !== 'supplier' && (!item.status || item.status === ScheduleStatus.PLANNED)) {
           updates.status = ScheduleStatus.EDITING;
-        }
-        if (userRole === 'supplier' && willHaveCompleteSupplierMaterials && !item.producerId) {
-          const assignedEditorId = chooseLeastLoadedEditorId();
-          if (assignedEditorId) {
-            updates.producerId = assignedEditorId;
-          }
         }
 
         if (!item.productionCode) {
@@ -5058,6 +5073,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                       const finishedVideos = Array.isArray(item.finishedVideoUrl) ? item.finishedVideoUrl : (item.finishedVideoUrl ? [item.finishedVideoUrl] : []);
                       const hasFinished = finishedVideos.length > 0;
                       const supplierDone = userRole === 'supplier' && isSupplierDone(item);
+                      const canCompleteSupplierPreparation = userRole === 'supplier' && hasSupplierPreparedMaterial(item) && !supplierDone;
                       const supplierUploadBlockMessages = userRole === 'supplier'
                         ? getSupplierUploadBlockMessages(
                             !!item.creatorLinkId || !!activePendingReferenceLink,
@@ -5122,6 +5138,19 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                             <div className="space-y-3 min-w-0">
                               {renderSupplierUploadBox(item, 'audio', audios, canUploadSupplierMaterial, supplierUploadBlockTitle)}
                               {renderSupplierUploadBox(item, 'video', videos, canUploadSupplierMaterial, supplierUploadBlockTitle)}
+                              <button
+                                onClick={() => {
+                                  if (!hasSupplierPreparedMaterial(item)) {
+                                    alert('Envie áudio e vídeo antes de concluir.');
+                                    return;
+                                  }
+                                  handleCompleteSupplierPreparation(item);
+                                }}
+                                disabled={!canCompleteSupplierPreparation}
+                                className="w-full min-h-12 py-3 px-4 rounded-2xl bg-blue-500 text-white hover:bg-blue-400 disabled:bg-[#1a1a1a] disabled:text-gray-600 disabled:border disabled:border-[#222] disabled:cursor-not-allowed text-[11px] font-black uppercase tracking-widest transition-all"
+                              >
+                                Concluir e enviar para edição
+                              </button>
                               {!canUploadSupplierMaterial && (
                                 <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-300 rounded-2xl p-3 text-[11px] font-bold leading-relaxed space-y-1">
                                   {supplierUploadBlockMessages.map(message => (
@@ -5267,6 +5296,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                         const videos = Array.isArray(item.videoMaterial) ? item.videoMaterial : (item.videoMaterial ? [item.videoMaterial] : []);
                         const finishedVideos = Array.isArray(item.finishedVideoUrl) ? item.finishedVideoUrl : (item.finishedVideoUrl ? [item.finishedVideoUrl] : []);
                         const supplierDone = userRole === 'supplier' && isSupplierDone(item);
+                        const canCompleteSupplierPreparation = userRole === 'supplier' && hasSupplierPreparedMaterial(item) && !supplierDone;
                         const supplierUploadBlockMessages = userRole === 'supplier'
                           ? getSupplierUploadBlockMessages(
                               !!item.creatorLinkId || !!activePendingReferenceLink,
@@ -5464,6 +5494,19 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                       ))}
                                     </div>
                                   )}
+                                  <button
+                                    onClick={() => {
+                                      if (!hasSupplierPreparedMaterial(item)) {
+                                        alert('Envie áudio e vídeo antes de concluir.');
+                                        return;
+                                      }
+                                      handleCompleteSupplierPreparation(item);
+                                    }}
+                                    disabled={!canCompleteSupplierPreparation}
+                                    className="md:col-span-2 w-full py-3 bg-blue-500 text-white hover:bg-blue-400 rounded-xl font-black text-xs uppercase tracking-widest transition-all disabled:bg-[#1a1a1a] disabled:text-gray-600 disabled:border disabled:border-[#222] disabled:cursor-not-allowed"
+                                  >
+                                    Concluir e enviar para edição
+                                  </button>
                                 </div>
                               ) : (
                                 userRole === 'editor' ? (
@@ -7409,31 +7452,11 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
     return messages;
   };
 
-  const chooseLeastLoadedPlannerEditorId = (item: ScheduleItem, indexOnDay: number) => {
-    if (activeEditors.length === 0) return '';
-
-    const productEditors = activeEditors.filter(p => Array.isArray(p.linkedProductIds) && p.linkedProductIds.includes(item.productId));
-    const candidatePool = productEditors.length > 0 ? productEditors : activeEditors;
-    const sortedPool = [...candidatePool].sort((a, b) => a.id.localeCompare(b.id));
-    const getLoad = (editorId: string) => {
-      const scheduleLoad = schedule.filter(s => s.producerId === editorId && s.status === ScheduleStatus.EDITING).length;
-      const sessionCount = Object.entries(sessionAssignmentsRef.current).filter(([id, assignedId]) => {
-        if (assignedId !== editorId) return false;
-        return !schedule.some(s => s.id === id && s.producerId === editorId && s.status === ScheduleStatus.EDITING);
-      }).length;
-      return scheduleLoad + sessionCount;
-    };
-    const workloads = sortedPool.map(editor => ({ editor, load: getLoad(editor.id) }));
-    const minLoad = Math.min(...workloads.map(w => w.load));
-    const bestCandidates = workloads.filter(w => w.load === minLoad).map(w => w.editor);
-    return bestCandidates[indexOnDay % bestCandidates.length]?.id || '';
-  };
-
   const handleUploadFile = async (itemId: string, type: 'audio' | 'video', file: File) => {
     try {
       const item = schedule.find(s => s.id === itemId);
       if (!item) return;
-      if (hasSupplierPreparedMaterial(item)) {
+      if (isSupplierPreparationSubmitted(item)) {
         alert('Este item ja foi concluido.');
         return;
       }
@@ -7511,24 +7534,8 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
       
       const field = type === 'audio' ? 'audioMaterial' : 'videoMaterial';
       const updates: any = { [field]: arrayUnion({ url, name: savedName }) };
-      const willHaveCompleteSupplierMaterials = (type === 'audio' || hasSupplierAudioMaterial(item)) && (type === 'video' || hasSupplierVideoMaterial(item));
-      if (willHaveCompleteSupplierMaterials && !item.producerId && activeEditors.length === 0) {
-        alert('Nenhum editor ativo vinculado disponivel para receber este material.');
-        return;
-      }
       
       updates.materialAddedAt = new Date().toISOString();
-      if (willHaveCompleteSupplierMaterials) {
-        const dateParts = item.date.split('-');
-        const formattedDate = dateParts.length === 3 ? `${dateParts[2]}/${dateParts[1]}` : item.date;
-        const assignedEditorId = item.producerId || chooseLeastLoadedPlannerEditorId(item, dIndex - 1);
-        updates.status = ScheduleStatus.EDITING;
-        updates.videoCode = item.videoCode || `${String(dIndex).padStart(3, '0')}-${formattedDate}`;
-        if (assignedEditorId) {
-          updates.producerId = assignedEditorId;
-          sessionAssignmentsRef.current[item.id] = assignedEditorId;
-        }
-      }
       if (!item.productionCode) {
         updates.productionCode = buildProductionCode(item, accounts, products, schedule);
       }
@@ -7669,6 +7676,9 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
 
       if (assignedEditorId) {
         updates.producerId = assignedEditorId;
+      } else {
+        alert('Nenhum editor ativo vinculado disponivel para receber este material.');
+        return;
       }
 
       if (inputs.audioUrl.trim()) {
@@ -7862,7 +7872,7 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
                         <div className="space-y-4">
                           {sortedItems.map((item, idx) => {
                             const countCode = `${String(idx + 1).padStart(3, '0')}`;
-                            const supplierDone = hasSupplierPreparedMaterial(item);
+                            const supplierDone = isSupplierPreparationSubmitted(item);
                             const supplierPartial = hasPartialSupplierMaterial(item);
                             const isPlanned = item.status === ScheduleStatus.PLANNED && !supplierDone;
                             const inputs = slotInputs[item.id] || { audioUrl: '', videoUrl: '', notes: '' };
@@ -8036,7 +8046,7 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
                                       title={sendBlockMessages.join(' | ')}
                                       className="w-full py-3 bg-blue-500 text-white hover:bg-blue-400 rounded-xl font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-blue-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
-                                      Finalizar e Enviar p/ Editor
+                                      Concluir e enviar para edição
                                     </button>
                                     {sendBlockMessages.length > 0 && (
                                       <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-300 rounded-2xl p-3 text-[11px] font-bold leading-relaxed">
