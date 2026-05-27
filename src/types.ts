@@ -84,10 +84,12 @@ export interface ScheduleItem {
   productId: string;
   videoSource?: string;
   minedVideoUrl?: string;
+  tiktokVideoUrl?: string;
+  tiktokIdentifier?: string;
   videoLink?: string;
-  audioMaterial?: { url: string; name: string }[];
-  videoMaterial?: { url: string; name: string }[];
-  finishedVideoUrl?: { url: string; name: string }[];
+  audioMaterial?: ProductionFile[];
+  videoMaterial?: ProductionFile[];
+  finishedVideoUrl?: ProductionFile[];
   producerId?: string; // Assigned editor
   supplierId?: string; // Assigned supplier
   status: ScheduleStatus;
@@ -107,6 +109,20 @@ export interface ScheduleItem {
   materialAddedAt?: string;
   dailyIndex?: number;
   scope?: 'PERSONAL' | 'COMPANY';
+}
+
+export interface ProductionFile {
+  name: string;
+  originalName?: string;
+  displayName?: string;
+  url?: string;
+  downloadURL?: string;
+  storagePath?: string;
+  provider?: string;
+  mimeType?: string;
+  size?: number;
+  uploadedAt?: string;
+  extension?: string;
 }
 
 export interface Producer {

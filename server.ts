@@ -6,7 +6,6 @@ import dotenv from "dotenv";
 dotenv.config();
 import crypto from "crypto";
 import fs from "fs";
-import multer from "multer";
 import { google } from "googleapis";
 import { initializeApp as initClientApp } from 'firebase/app';
 import { initializeFirestore, doc, collection, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
@@ -100,13 +99,6 @@ app.use(async (req, res, next) => {
   }
   next();
 });
-
-const uploadDir = path.join(process.cwd(), '.tmp', 'uploads');
-fs.mkdirSync(uploadDir, { recursive: true });
-const upload = multer({ dest: uploadDir });
-const localUploadsDir = path.join(process.cwd(), '.tmp', 'public_uploads');
-fs.mkdirSync(localUploadsDir, { recursive: true });
-app.use('/uploads', express.static(localUploadsDir));
 
 // Google OAuth setup for Owner
 const getOAuth2Client = (req?: express.Request) => {
@@ -914,81 +906,11 @@ app.get("/api/drive/callback", async (req, res) => {
   }
 });
 
-app.post("/api/drive/upload", upload.single('file'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-  const { parentId, fileName } = req.body;
-
-  try {
-    if (!db) throw new Error("DB not initialized");
-    
-    // Auth logic: Always use global tokens
-    const globalDoc = await db.collection('settings').doc('google_drive').get();
-    const tokens = globalDoc.exists ? globalDoc.data() : null;
-
-    if (!tokens || !tokens.refresh_token) {
-      throw new Error("Google Drive não configurado no servidor. O administrador precisa conectar o Drive primeiro.");
-    }
-
-    const oauth2Client = getOAuth2Client(req);
-    oauth2Client.setCredentials(tokens);
-
-    const drive = google.drive({ version: 'v3', auth: oauth2Client });
-    
-    const fileMetadata = {
-      name: fileName || req.file.originalname,
-      parents: parentId ? [parentId] : []
-    };
-    
-    const media = {
-      mimeType: req.file.mimetype,
-      body: fs.createReadStream(req.file.path)
-    };
-
-    const response = await drive.files.create({
-      requestBody: fileMetadata,
-      media: media,
-      fields: 'id, webViewLink, name'
-    } as any);
-
-    // Clean up temp file
-    fs.unlinkSync(req.file.path);
-
-    res.json(response.data);
-  } catch (error: any) {
-    console.error("Upload error:", error);
-    if (req.file && fs.existsSync(req.file.path)) {
-      try {
-        const safeName = String(fileName || req.file.originalname || 'upload')
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .replace(/[^a-zA-Z0-9._-]+/g, '_')
-          .replace(/^_+|_+$/g, '') || 'upload';
-        const localName = `${Date.now()}_${safeName}`;
-        const localPath = path.join(localUploadsDir, localName);
-        fs.renameSync(req.file.path, localPath);
-
-        const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-        const host = req.get('host');
-        const webViewLink = `${protocol}://${host}/uploads/${encodeURIComponent(localName)}`;
-        console.warn(`[Upload] Drive falhou (${error.message}). Arquivo salvo localmente em ${webViewLink}`);
-        return res.json({
-          id: `local_${localName}`,
-          webViewLink,
-          name: safeName,
-          provider: 'local_server',
-          warning: `Google Drive indisponivel: ${error.message}`
-        });
-      } catch (fallbackError: any) {
-        console.error("Local upload fallback error:", fallbackError);
-        if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-        return res.status(500).json({
-          error: `Falha no upload. Drive: ${error.message}. Fallback local: ${fallbackError.message}`,
-          code: error.code || 'upload_failed'
-        });
-      }
-    }
-    res.status(500).json({ error: error.message, code: error.code || 'upload_failed' });
-  }
+app.post("/api/drive/upload", async (_req: any, res) => {
+  return res.status(410).json({
+    error: "Uploads de producao foram migrados para Firebase Storage.",
+    code: "firebase_storage_required"
+  });
 });
 
 app.post("/api/drive/folder", async (req, res) => {
@@ -1041,12 +963,9 @@ app.post("/api/drive/folder", async (req, res) => {
     res.json(response.data);
   } catch (error: any) {
     console.error("[Drive] Folder creation error:", error);
-    console.warn(`[Drive] Usando pasta local virtual para ${name} porque o Drive falhou: ${error.message}`);
-    res.json({
-      id: `local_${String(name || 'uploads').replace(/[^a-zA-Z0-9._-]+/g, '_')}`,
-      name: name || 'uploads',
-      provider: 'local_server',
-      warning: `Google Drive indisponivel: ${error.message}`
+    res.status(503).json({
+      error: `Google Drive indisponivel: ${error.message}`,
+      code: 'drive_unavailable'
     });
   }
 });

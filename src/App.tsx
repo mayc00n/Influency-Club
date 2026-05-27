@@ -99,6 +99,20 @@ import {
   TiktokLink
 } from './types';
 
+type StoredProductionFile = {
+  name: string;
+  originalName: string;
+  displayName: string;
+  downloadURL: string;
+  url: string;
+  storagePath: string;
+  provider: 'firebase-storage';
+  mimeType: string;
+  size: number;
+  uploadedAt: string;
+  extension: string;
+};
+
 // Components
 const phaseMap: Record<string, string> = {
   [WinningStatus.TESTING]: 'Teste',
@@ -130,6 +144,98 @@ function normalizeFileList(value: any): any[] {
   return Array.isArray(value) ? value.filter(Boolean) : [value];
 }
 
+function getFileUrl(file: any): string {
+  if (!file) return '';
+  if (typeof file === 'string') return file;
+  return file.downloadURL || file.url || file.webViewLink || '';
+}
+
+function getFileName(file: any, fallback = 'arquivo'): string {
+  if (!file) return fallback;
+  if (typeof file === 'string') return fallback;
+  return file.displayName || file.name || file.originalName || fallback;
+}
+
+function getFileExtension(fileName: string, mimeType = ''): string {
+  const cleanName = fileName.split('?')[0].split('#')[0];
+  const dotIndex = cleanName.lastIndexOf('.');
+  if (dotIndex >= 0 && dotIndex < cleanName.length - 1) {
+    return cleanName.slice(dotIndex).toLowerCase();
+  }
+  if (mimeType === 'audio/mpeg' || mimeType === 'audio/mp3') return '.mp3';
+  if (mimeType === 'video/mp4') return '.mp4';
+  return '';
+}
+
+function buildSafeUploadFileName(file: File, baseName: string): { fileName: string; extension: string } {
+  const extension = getFileExtension(file.name, file.type);
+  const safeBase = sanitizeStoragePathPart(baseName.replace(/\.[^.]+$/, '')) || 'arquivo';
+  return {
+    fileName: `${safeBase}${extension}`,
+    extension
+  };
+}
+
+async function uploadProductionFile(params: {
+  file: File;
+  scheduleId: string;
+  itemId: string;
+  baseName: string;
+}): Promise<StoredProductionFile> {
+  const { file, scheduleId, itemId, baseName } = params;
+  const { fileName, extension } = buildSafeUploadFileName(file, baseName);
+  const storagePath = [
+    'production_uploads',
+    sanitizeStoragePathPart(scheduleId),
+    sanitizeStoragePathPart(itemId),
+    `${Date.now()}_${fileName}`
+  ].join('/');
+  const fileRef = ref(storage, storagePath);
+  const mimeType = file.type || 'application/octet-stream';
+
+  await uploadBytes(fileRef, file, { contentType: mimeType });
+  const downloadURL = await getDownloadURL(fileRef);
+
+  return {
+    name: fileName,
+    originalName: file.name || fileName,
+    displayName: fileName,
+    downloadURL,
+    url: downloadURL,
+    storagePath,
+    provider: 'firebase-storage',
+    mimeType,
+    size: file.size,
+    uploadedAt: new Date().toISOString(),
+    extension
+  };
+}
+
+async function handleDownloadFile(file: any) {
+  try {
+    let downloadURL = typeof file === 'string' ? '' : file?.downloadURL;
+    if (!downloadURL && typeof file !== 'string' && file?.storagePath) {
+      downloadURL = await getDownloadURL(ref(storage, file.storagePath));
+    }
+
+    if (!downloadURL) {
+      alert('Arquivo antigo sem URL permanente. Reenvie o material.');
+      return;
+    }
+
+    const link = document.createElement('a');
+    link.href = downloadURL;
+    link.download = getFileName(file);
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } catch (err) {
+    console.error('Download error:', err);
+    alert('Arquivo antigo sem URL permanente. Reenvie o material.');
+  }
+}
+
 function hasEditableMaterial(item: ScheduleItem): boolean {
   const rawItem = item as any;
   return [
@@ -146,6 +252,22 @@ function hasEditableMaterial(item: ScheduleItem): boolean {
 
 function hasFinishedVideo(item: ScheduleItem): boolean {
   return normalizeFileList(item.finishedVideoUrl).length > 0;
+}
+
+function getOfficialCreativeUrl(item?: ScheduleItem | null): string {
+  if (!item) return '';
+  const rawItem = item as any;
+  return (
+    item.minedVideoUrl ||
+    rawItem.tiktokVideoUrl ||
+    rawItem.tiktokIdentifier ||
+    item.sourceVideoLink ||
+    ''
+  ).trim();
+}
+
+function getOfficialCreativeKey(value: string): string {
+  return normalizeTiktokUrl(value.trim());
 }
 
 function needsPartnerPublicationReview(item: ScheduleItem): boolean {
@@ -211,10 +333,11 @@ function needsSupplierDashboardAction(item: ScheduleItem, supplierId?: string): 
   return item.status !== ScheduleStatus.POSTED && item.status !== ScheduleStatus.CANCELLED;
 }
 
-function getSupplierUploadBlockMessages(hasContentLink: boolean, hasLinkedEditor: boolean): string[] {
+function getSupplierUploadBlockMessages(_hasContentLink: boolean, _hasLinkedEditor: boolean): string[] {
   const messages: string[] = [];
+  const hasContentLink = true;
   if (!hasContentLink) messages.push('Adicione o link do conteúdo');
-  if (!hasLinkedEditor) messages.push('Vincule um editor');
+  if (!_hasLinkedEditor) messages.push('Vincule um editor');
   return messages;
 }
 
@@ -4075,7 +4198,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
     if (!activeProducerId || !activeProductId) return [];
     const urls = pendingProduction
       .filter(item => item.productId === activeProductId && item.supplierId === activeProducerId)
-      .map(item => item.minedVideoUrl?.trim())
+      .map(item => getOfficialCreativeUrl(item))
       .filter((url): url is string => !!url);
     return Array.from(new Set(urls));
   }, [activeProducerId, activeProductId, pendingProduction]);
@@ -4188,18 +4311,17 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
     try {
       let targetItemId = itemId;
       let item = schedule.find(s => s.id === itemId);
-      const shouldRequireReference = userRole === 'supplier' && (type === 'audio' || type === 'video');
-      let referenceLinkToConsume = shouldRequireReference ? activePendingReferenceLink : null;
+      const isSupplierMaterialUpload = userRole === 'supplier' && (type === 'audio' || type === 'video');
 
       if (itemId === 'virtual-draft-item') {
-        const blockMessages = shouldRequireReference
-          ? getSupplierUploadBlockMessages(!!referenceLinkToConsume, true)
+        const blockMessages = isSupplierMaterialUpload
+          ? getSupplierUploadBlockMessages(true, true)
           : [];
         if (blockMessages.length > 0) {
           alert(blockMessages.join('\n'));
           return;
         }
-        const virtualUploadWouldComplete = shouldRequireReference && ((type === 'audio' || hasSupplierAudioMaterial(item as ScheduleItem)) && (type === 'video' || hasSupplierVideoMaterial(item as ScheduleItem)));
+        const virtualUploadWouldComplete = isSupplierMaterialUpload && ((type === 'audio' || hasSupplierAudioMaterial(item as ScheduleItem)) && (type === 'video' || hasSupplierVideoMaterial(item as ScheduleItem)));
         if (virtualUploadWouldComplete && activeLinkedEditors.length === 0) {
           alert('Nenhum editor ativo vinculado disponivel para receber este material.');
           return;
@@ -4244,12 +4366,12 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
       }
 
       if (!item) return;
-      if (shouldRequireReference && isSupplierDone(item)) {
+      if (isSupplierMaterialUpload && isSupplierDone(item)) {
         alert('Este item ja foi concluido.');
         return;
       }
-      if (shouldRequireReference) {
-        const blockMessages = getSupplierUploadBlockMessages(!!item.creatorLinkId || !!referenceLinkToConsume, true);
+      if (isSupplierMaterialUpload) {
+        const blockMessages = getSupplierUploadBlockMessages(true, true);
         if (blockMessages.length > 0) {
           alert(blockMessages.join('\n'));
           return;
@@ -4266,78 +4388,19 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
         item = { ...item, dailyIndex: dIndex };
       }
 
-      const product = products.find(p => p.id === item.productId);
-      const folderName = product ? `Influency_${product.name}` : 'Influency_Assets';
-      
-      // 1. Get or create folder via Server Proxy
-      const folderRes = await fetch('/api/drive/folder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: folderName })
-      });
-      
-      let folderData;
-      const folderContentType = folderRes.headers.get("content-type");
-      if (folderContentType && folderContentType.includes("application/json")) {
-        folderData = await folderRes.json();
-      } else {
-        const text = await folderRes.text();
-        console.error("Non-JSON response from folder creation:", text);
-        throw new Error(`Erro no servidor (Status ${folderRes.status}). ${text.substring(0, 100)}`);
-      }
-      
-      if (!folderRes.ok) {
-        if (folderData.error?.includes("não configurado")) {
-          if (isPartner) {
-            if (confirm("O Google Drive Global não está configurado. Deseja configurar agora para que todos possam fazer upload?")) {
-              const authRes = await fetch(`/api/drive/auth-url`);
-              const authData = await authRes.json();
-              window.location.href = authData.url;
-              return;
-            }
-          } else {
-            throw new Error("O Google Drive não foi configurado pelo administrador. Peça ao proprietário para vincular o Drive Global.");
-          }
-        }
-        throw new Error(folderData.error || "Google Drive não configurado.");
-      }
-      const folderId = folderData.id;
-
-      // 2. Upload file via Server Proxy
+      {
       const paddedIndex = String(dIndex).padStart(3, '0');
-      const extension = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')) : '';
-      const baseFileName = type === 'finished' ? `Vídeo pronto ${paddedIndex}` : paddedIndex;
-      const finalName = baseFileName + extension;
-      
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('parentId', folderId);
-      formData.append('fileName', finalName);
-
-      const uploadResponse = await fetch('/api/drive/upload', {
-        method: 'POST',
-        body: formData
+      const baseFileName = type === 'finished' ? `Video pronto ${paddedIndex}` : paddedIndex;
+      const uploadedFile = await uploadProductionFile({
+        file,
+        scheduleId: targetItemId,
+        itemId: targetItemId,
+        baseName: baseFileName
       });
 
-      let driveFile;
-      const uploadContentType = uploadResponse.headers.get("content-type");
-      if (uploadContentType && uploadContentType.includes("application/json")) {
-        driveFile = await uploadResponse.json();
-      } else {
-        const text = await uploadResponse.text();
-        console.error("Non-JSON response from upload:", text);
-        throw new Error(`Erro no upload (Status ${uploadResponse.status}). ${text.substring(0, 100)}`);
-      }
-
-      if (!uploadResponse.ok) {
-        throw new Error(driveFile.error || "Erro no upload do servidor.");
-      }
-      const url = driveFile.webViewLink;
-      const savedName = driveFile.name || finalName;
-      
       const field = type === 'audio' ? 'audioMaterial' : type === 'video' ? 'videoMaterial' : 'finishedVideoUrl';
-      const updates: any = { [field]: arrayUnion({ url, name: savedName }) };
-      
+      const updates: any = { [field]: arrayUnion(uploadedFile) };
+
       if (type === 'finished') {
         updates.status = ScheduleStatus.PRODUCED;
         updates.producedAt = new Date().toISOString();
@@ -4350,38 +4413,11 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
         if (!item.productionCode) {
           updates.productionCode = buildProductionCode(item, accounts, products, schedule);
         }
-
-        if (userRole === 'supplier') {
-          const alreadyLinkedReference = item.creatorLinkId
-            ? tiktokLinks.find(lnk => lnk.id === item.creatorLinkId)
-            : undefined;
-          const referenceLink = alreadyLinkedReference || referenceLinkToConsume;
-
-          if (referenceLink) {
-            updates.creatorHandle = resolveCreatorHandle(item, referenceLink, accounts);
-            updates.creatorLinkId = referenceLink.id;
-            updates.sourceVideoLink = referenceLink.link;
-            updates.videoLink = referenceLink.link;
-            try {
-              await updateDoc(doc(db, 'tiktok_links', referenceLink.id), {
-                scheduleItemId: targetItemId,
-                supplierId: linkedProducer.id,
-                usedAt: new Date().toISOString(),
-                consumedAt: new Date().toISOString(),
-                associatedAt: new Date().toISOString()
-              });
-              if (!alreadyLinkedReference) {
-                setPendingReferenceLink(null);
-                if (pendingReferenceStorageKey) localStorage.removeItem(pendingReferenceStorageKey);
-              }
-            } catch (linkError) {
-              console.error("Failed to associate link doc:", linkError);
-            }
-          }
-        }
       }
 
       await updateDoc(doc(db, 'schedule', targetItemId), updates);
+      return;
+      }
     } catch (err: any) {
       console.error('Upload error:', err);
       alert(`Erro no upload: ${err.message}`);
@@ -4767,7 +4803,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
   };
 
   const renderMinedVideoReference = (item: ScheduleItem, compact = false) => {
-    const minedVideoUrl = item.minedVideoUrl?.trim();
+    const minedVideoUrl = getOfficialCreativeUrl(item);
 
     return (
       <div className={`bg-[#0d0d0d] border border-[#222] rounded-2xl ${compact ? 'p-3' : 'p-4'} min-w-0`}>
@@ -4841,13 +4877,13 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
         {files.length > 0 && (
           <div className="flex flex-col gap-1.5 mt-1 max-h-36 overflow-y-auto">
             {files.map((file: any, idx: number) => {
-              const url = typeof file === 'string' ? file : file.url;
-              const name = typeof file === 'string' ? `${isAudio ? 'Audio' : 'Bruto'} #${idx + 1}` : (file.name || `${isAudio ? 'Audio' : 'Bruto'} #${idx + 1}`);
+              const url = getFileUrl(file);
+              const name = getFileName(file, `${isAudio ? 'Audio' : 'Bruto'} #${idx + 1}`);
               return (
                 <div key={idx} className={`flex items-center justify-between gap-2 bg-[#0d0d0d] border border-[#1a1a1a] px-3 py-2 rounded-xl text-xs ${isAudio ? 'text-blue-400/90 hover:text-blue-400 hover:border-blue-500/20' : 'text-purple-400/90 hover:text-purple-400 hover:border-purple-500/20'} transition-all min-w-0`}>
-                  <a href={url} target="_blank" rel="noreferrer" className="truncate font-semibold hover:underline flex-1 min-w-0" title={name}>
+                  <button type="button" onClick={() => handleDownloadFile(file)} className="truncate font-semibold hover:underline flex-1 min-w-0 text-left" title={name}>
                     {name}
-                  </a>
+                  </button>
                   <div className="flex items-center gap-1 shrink-0">
                     <button
                       onClick={() => setActivePreviewVideo({ url, name, type })}
@@ -4856,9 +4892,9 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                     >
                       <Play className="w-3.5 h-3.5" />
                     </button>
-                    <a href={url} target="_blank" rel="noreferrer" className={`p-1 ${isAudio ? 'hover:bg-blue-500/10' : 'hover:bg-purple-500/10'} rounded transition-colors`} title="Baixar">
+                    <button type="button" onClick={() => handleDownloadFile(file)} className={`p-1 ${isAudio ? 'hover:bg-blue-500/10' : 'hover:bg-purple-500/10'} rounded transition-colors`} title="Baixar">
                       <Download className="w-3.5 h-3.5" />
-                    </a>
+                    </button>
                     {!supplierDone && (
                       <button
                         onClick={() => handleDeleteAsset(item, type, url)}
@@ -5057,12 +5093,12 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
             ) : (
               <>
                 {userRole === 'supplier' && (
-                  <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px] gap-6 items-start">
+                  <div className="grid grid-cols-1 gap-6 items-start">
                     <div className="bg-[#141414] border border-[#222] rounded-[2rem] p-6">
                       <p className="text-[10px] font-black uppercase tracking-widest text-orange-500 mb-2">Vídeo Minerado</p>
                       <h4 className="text-white font-black text-lg italic">Referência enviada pelo sócio para preparar os materiais</h4>
                       <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-                        Use este vídeo como base para preparar áudio e material bruto. O identificador TikTok continua separado ao lado.
+                        Use este video como base para preparar audio e material bruto.
                       </p>
                       {minedVideoUrlsForActiveProduct.length > 0 ? (
                         <div className="mt-5 flex flex-col gap-2">
@@ -5084,17 +5120,6 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                         <p className="text-xs text-gray-600 italic mt-5">Nenhum vídeo minerado informado.</p>
                       )}
                     </div>
-                    <TiktokVideoIdentifier
-                      tiktokLinks={tiktokLinks}
-                      user={user}
-                      viewMode={viewMode}
-                      linkedProducer={linkedProducer}
-                      pendingLinkId={activePendingReferenceLink?.id || null}
-                      onPendingLinkAccepted={(link) => {
-                        setPendingReferenceLink(link);
-                        if (pendingReferenceStorageKey) localStorage.setItem(pendingReferenceStorageKey, link.id);
-                      }}
-                    />
                   </div>
                 )}
                 <div className="md:hidden space-y-4">
@@ -5121,10 +5146,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                       const supplierDone = userRole === 'supplier' && isSupplierDone(item);
                       const canCompleteSupplierPreparation = userRole === 'supplier' && hasSupplierPreparedMaterial(item) && !supplierDone;
                       const supplierUploadBlockMessages = userRole === 'supplier'
-                        ? getSupplierUploadBlockMessages(
-                            !!item.creatorLinkId || !!activePendingReferenceLink,
-                            true
-                          )
+                        ? getSupplierUploadBlockMessages(true, true)
                         : [];
                       const canUploadSupplierMaterial = userRole !== 'supplier' || (!supplierDone && supplierUploadBlockMessages.length === 0);
                       const supplierUploadBlockTitle = supplierDone ? 'Item concluido' : supplierUploadBlockMessages.join(' | ');
@@ -5216,25 +5238,23 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                 ) : (
                                   <div className="space-y-2">
                                     {audios.map((file: any, idx: number) => {
-                                      const url = typeof file === 'string' ? file : file.url;
-                                      const name = typeof file === 'string' ? `Audio #${idx + 1}` : (file.name || `Audio #${idx + 1}`);
+                                      const name = getFileName(file, `Audio #${idx + 1}`);
                                       return (
-                                        <a key={`mobile-audio-${idx}`} href={url} target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 px-3 py-3 rounded-2xl text-xs font-bold transition-all w-full min-w-0" title={name}>
+                                        <button type="button" key={`mobile-audio-${idx}`} onClick={() => handleDownloadFile(file)} className="flex items-center gap-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 px-3 py-3 rounded-2xl text-xs font-bold transition-all w-full min-w-0" title={name}>
                                           <Music className="w-4 h-4 shrink-0" />
                                           <span className="truncate flex-1 text-left min-w-0">{name}</span>
                                           <Download className="w-4 h-4 shrink-0 text-gray-400" />
-                                        </a>
+                                        </button>
                                       );
                                     })}
                                     {videos.map((file: any, idx: number) => {
-                                      const url = typeof file === 'string' ? file : file.url;
-                                      const name = typeof file === 'string' ? `Bruto #${idx + 1}` : (file.name || `Bruto #${idx + 1}`);
+                                      const name = getFileName(file, `Bruto #${idx + 1}`);
                                       return (
-                                        <a key={`mobile-video-${idx}`} href={url} target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 px-3 py-3 rounded-2xl text-xs font-bold transition-all w-full min-w-0" title={name}>
+                                        <button type="button" key={`mobile-video-${idx}`} onClick={() => handleDownloadFile(file)} className="flex items-center gap-2 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 px-3 py-3 rounded-2xl text-xs font-bold transition-all w-full min-w-0" title={name}>
                                           <Video className="w-4 h-4 shrink-0" />
                                           <span className="truncate flex-1 text-left min-w-0">{name}</span>
                                           <Download className="w-4 h-4 shrink-0 text-gray-400" />
-                                        </a>
+                                        </button>
                                       );
                                     })}
                                   </div>
@@ -5269,7 +5289,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                       <button
                                         onClick={() => {
                                           const file = finishedVideos[0] as any;
-                                          const url = typeof file === 'string' ? file : file.url;
+                                          const url = getFileUrl(file);
                                           const name = typeof file === 'string' ? 'Video pronto' : (file.name || 'Video pronto');
                                           setActivePreviewVideo({ url, name, type: 'video' });
                                         }}
@@ -5282,7 +5302,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                         <button
                                           onClick={() => {
                                             const file = finishedVideos[0] as any;
-                                            const url = typeof file === 'string' ? file : file.url;
+                                            const url = getFileUrl(file);
                                             handleDeleteAsset(item, 'finished', url);
                                           }}
                                           className="p-3 bg-[#0a0a0a] border border-[#222] rounded-2xl text-red-500 hover:text-red-400"
@@ -5346,10 +5366,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                         const supplierDone = userRole === 'supplier' && isSupplierDone(item);
                         const canCompleteSupplierPreparation = userRole === 'supplier' && hasSupplierPreparedMaterial(item) && !supplierDone;
                         const supplierUploadBlockMessages = userRole === 'supplier'
-                          ? getSupplierUploadBlockMessages(
-                              !!item.creatorLinkId || !!activePendingReferenceLink,
-                              true
-                            )
+                          ? getSupplierUploadBlockMessages(true, true)
                           : [];
                         const canUploadSupplierMaterial = userRole !== 'supplier' || (!supplierDone && supplierUploadBlockMessages.length === 0);
                         const supplierUploadBlockTitle = supplierDone ? 'Item concluido' : supplierUploadBlockMessages.join(' | ');
@@ -5436,13 +5453,13 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                     {audios.length > 0 && (
                                       <div className="flex flex-col gap-1.5 mt-1 max-h-36 overflow-y-auto">
                                         {audios.map((file: any, idx: number) => {
-                                          const url = typeof file === 'string' ? file : file.url;
+                                          const url = getFileUrl(file);
                                           const name = typeof file === 'string' ? `Áudio #${idx + 1}` : (file.name || `Áudio #${idx + 1}`);
                                           return (
                                             <div key={idx} className="flex items-center justify-between gap-2 bg-[#0d0d0d] border border-[#1a1a1a] px-3 py-2 rounded-xl text-xs text-blue-400/90 hover:text-blue-400 hover:border-blue-500/20 transition-all">
-                                              <a href={url} target="_blank" rel="noreferrer" className="truncate font-semibold hover:underline flex-1" title={name}>
+                                              <button type="button" onClick={() => handleDownloadFile(file)} className="truncate font-semibold hover:underline flex-1 text-left" title={name}>
                                                 {name}
-                                              </a>
+                                              </button>
                                               <div className="flex items-center gap-1 flex-shrink-0">
                                                 <button
                                                   onClick={() => setActivePreviewVideo({ url, name, type: 'audio' })}
@@ -5451,9 +5468,9 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                                 >
                                                   <Play className="w-3.5 h-3.5" />
                                                 </button>
-                                                <a href={url} target="_blank" rel="noreferrer" className="p-1 hover:bg-blue-500/10 rounded text-blue-400 transition-colors" title="Baixar">
+                                                <button type="button" onClick={() => handleDownloadFile(file)} className="p-1 hover:bg-blue-500/10 rounded text-blue-400 transition-colors" title="Baixar">
                                                   <Download className="w-3.5 h-3.5" />
-                                                </a>
+                                                </button>
                                                 <button 
                                                   onClick={() => handleDeleteAsset(item, 'audio', url)}
                                                   className="p-1 hover:bg-red-500/10 rounded text-red-500 transition-colors cursor-pointer"
@@ -5507,13 +5524,13 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                     {videos.length > 0 && (
                                       <div className="flex flex-col gap-1.5 mt-1 max-h-36 overflow-y-auto">
                                         {videos.map((file: any, idx: number) => {
-                                          const url = typeof file === 'string' ? file : file.url;
+                                          const url = getFileUrl(file);
                                           const name = typeof file === 'string' ? `Bruto #${idx + 1}` : (file.name || `Bruto #${idx + 1}`);
                                           return (
                                             <div key={idx} className="flex items-center justify-between gap-2 bg-[#0d0d0d] border border-[#1a1a1a] px-3 py-2 rounded-xl text-xs text-purple-400/90 hover:text-purple-400 hover:border-purple-500/20 transition-all">
-                                              <a href={url} target="_blank" rel="noreferrer" className="truncate font-semibold hover:underline flex-1" title={name}>
+                                              <button type="button" onClick={() => handleDownloadFile(file)} className="truncate font-semibold hover:underline flex-1 text-left" title={name}>
                                                 {name}
-                                              </a>
+                                              </button>
                                               <div className="flex items-center gap-1 flex-shrink-0">
                                                 <button
                                                   onClick={() => setActivePreviewVideo({ url, name, type: 'video' })}
@@ -5522,9 +5539,9 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                                 >
                                                   <Play className="w-3.5 h-3.5" />
                                                 </button>
-                                                <a href={url} target="_blank" rel="noreferrer" className="p-1 hover:bg-purple-500/10 rounded text-purple-400 transition-colors" title="Baixar">
+                                                <button type="button" onClick={() => handleDownloadFile(file)} className="p-1 hover:bg-purple-500/10 rounded text-purple-400 transition-colors" title="Baixar">
                                                   <Download className="w-3.5 h-3.5" />
-                                                </a>
+                                                </button>
                                                 <button 
                                                   onClick={() => handleDeleteAsset(item, 'video', url)}
                                                   className="p-1 hover:bg-red-500/10 rounded text-red-500 transition-colors cursor-pointer"
@@ -5569,39 +5586,35 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                     ) : (
                                       <>
                                         {audios.map((file: any, idx: number) => {
-                                          const url = typeof file === 'string' ? file : file.url;
+                                          const url = getFileUrl(file);
                                           const name = typeof file === 'string' ? `Áudio #${idx + 1}` : (file.name || `Áudio #${idx + 1}`);
                                           return (
-                                            <a 
+                                            <button type="button"
                                               key={`audio-${idx}`}
-                                              href={url} 
-                                              target="_blank" 
-                                              rel="noreferrer" 
+                                              onClick={() => handleDownloadFile(file)}
                                               className="flex items-center gap-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 px-2.5 py-1.5 rounded-xl text-xs font-semibold max-w-[200px] truncate transition-all w-full"
                                               title={name}
                                             >
                                               <Music className="w-3.5 h-3.5 flex-shrink-0" />
                                               <span className="truncate flex-1 text-left">{name}</span>
                                               <Download className="w-3.5 h-3.5 flex-shrink-0 text-gray-400 hover:text-white" />
-                                            </a>
+                                            </button>
                                           );
                                         })}
                                         {videos.map((file: any, idx: number) => {
-                                          const url = typeof file === 'string' ? file : file.url;
+                                          const url = getFileUrl(file);
                                           const name = typeof file === 'string' ? `Bruto #${idx + 1}` : (file.name || `Bruto #${idx + 1}`);
                                           return (
-                                            <a 
+                                            <button type="button"
                                               key={`video-${idx}`}
-                                              href={url} 
-                                              target="_blank" 
-                                              rel="noreferrer" 
+                                              onClick={() => handleDownloadFile(file)}
                                               className="flex items-center gap-1.5 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 px-2.5 py-1.5 rounded-xl text-xs font-semibold max-w-[200px] truncate transition-all w-full"
                                               title={name}
                                             >
                                               <Video className="w-3.5 h-3.5 flex-shrink-0" />
                                               <span className="truncate flex-1 text-left">{name}</span>
                                               <Download className="w-3.5 h-3.5 flex-shrink-0 text-gray-400 hover:text-white" />
-                                            </a>
+                                            </button>
                                           );
                                         })}
                                       </>
@@ -5688,7 +5701,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                          <button
                                            onClick={() => {
                                              const file = finishedVideos[0] as any;
-                                             const url = typeof file === 'string' ? file : file.url;
+                                             const url = getFileUrl(file);
                                              const name = typeof file === 'string' ? 'Video pronto' : (file.name || 'Video pronto');
                                              setActivePreviewVideo({ url, name, type: 'video' });
                                            }}
@@ -5701,7 +5714,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                            <button
                                              onClick={() => {
                                                const file = finishedVideos[0] as any;
-                                               const url = typeof file === 'string' ? file : file.url;
+                                               const url = getFileUrl(file);
                                                handleDeleteAsset(item, 'finished', url);
                                              }}
                                              className="p-2 bg-[#0a0a0a] border border-[#222] rounded-xl text-red-500 hover:text-red-400"
@@ -5783,17 +5796,17 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                </div>
                                <div className="flex flex-col gap-2">
                                  {audioPairs.map((pair: any, idx) => {
-                                   const url = typeof pair.file === 'string' ? pair.file : pair.file.url;
+                                   const url = getFileUrl(pair.file);
                                    const name = typeof pair.file === 'string' ? `Áudio #${idx + 1}` : pair.file.name;
                                    return (
                                      <div key={idx} className="flex items-center justify-between p-4 bg-[#141414] border border-[#222] rounded-2xl group/link hover:border-blue-500/50 transition-all">
-                                        <a href={url} target="_blank" rel="noreferrer" className="flex-1 truncate text-sm font-bold text-gray-400 hover:text-white mr-2 transition-colors" title={name}>
+                                        <button type="button" onClick={() => handleDownloadFile(pair.file)} className="flex-1 truncate text-sm font-bold text-gray-400 hover:text-white mr-2 transition-colors text-left" title={name}>
                                           {name}
-                                        </a>
+                                        </button>
                                         <div className="flex items-center gap-1.5">
-                                          <a href={url} target="_blank" rel="noreferrer" className="p-1 text-gray-500 hover:text-blue-500 rounded transition-colors">
+                                          <button type="button" onClick={() => handleDownloadFile(pair.file)} className="p-1 text-gray-500 hover:text-blue-500 rounded transition-colors">
                                             <Download className="w-4 h-4" />
-                                          </a>
+                                          </button>
                                           {isPartner && (
                                             <button 
                                               onClick={() => handleDeleteAsset(pair.item, 'audio', url)}
@@ -5821,17 +5834,17 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                </div>
                                <div className="flex flex-col gap-2">
                                  {videoPairs.map((pair: any, idx) => {
-                                   const url = typeof pair.file === 'string' ? pair.file : pair.file.url;
+                                   const url = getFileUrl(pair.file);
                                    const name = typeof pair.file === 'string' ? `Bruto #${idx + 1}` : pair.file.name;
                                    return (
                                      <div key={idx} className="flex items-center justify-between p-4 bg-[#141414] border border-[#222] rounded-2xl group/link hover:border-purple-500/50 transition-all">
-                                        <a href={url} target="_blank" rel="noreferrer" className="flex-1 truncate text-sm font-bold text-gray-400 hover:text-white mr-2 transition-colors" title={name}>
+                                        <button type="button" onClick={() => handleDownloadFile(pair.file)} className="flex-1 truncate text-sm font-bold text-gray-400 hover:text-white mr-2 transition-colors text-left" title={name}>
                                           {name}
-                                        </a>
+                                        </button>
                                         <div className="flex items-center gap-1.5">
-                                          <a href={url} target="_blank" rel="noreferrer" className="p-1 text-gray-500 hover:text-purple-500 rounded transition-colors">
+                                          <button type="button" onClick={() => handleDownloadFile(pair.file)} className="p-1 text-gray-500 hover:text-purple-500 rounded transition-colors">
                                             <Download className="w-4 h-4" />
-                                          </a>
+                                          </button>
                                           {isPartner && (
                                             <button 
                                               onClick={() => handleDeleteAsset(pair.item, 'video', url)}
@@ -5859,7 +5872,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                </div>
                                <div className="flex flex-col gap-2">
                                  {finishedPairs.map((pair: any, idx) => {
-                                   const url = typeof pair.file === 'string' ? pair.file : pair.file.url;
+                                   const url = getFileUrl(pair.file);
                                    const name = typeof pair.file === 'string' ? `Vídeo Final #${idx + 1}` : pair.file.name;
                                    return (
                                      <div key={idx} className="flex items-center justify-between p-4 bg-green-500/5 border border-green-500/10 rounded-2xl group/link hover:border-green-500 hover:bg-green-500/10 transition-all">
@@ -6537,13 +6550,13 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                               {urls.length > 0 ? (
                                 <div className="space-y-1">
                                   {urls.map((u: any, idx: number) => {
-                                    const url = typeof u === 'string' ? u : u.url;
+                                    const url = getFileUrl(u);
                                     const name = typeof u === 'string' ? `Material #${idx + 1}` : u.name;
                                     return (
-                                      <a key={idx} href={url} target="_blank" rel="noreferrer" className="text-sm text-white font-bold hover:text-orange-500 truncate block flex items-center gap-2">
+                                      <button type="button" key={idx} onClick={() => handleDownloadFile(u)} className="text-sm text-white font-bold hover:text-orange-500 truncate flex items-center gap-2">
                                         <span className="truncate">{name}</span>
                                         <ExternalLink className="w-3 h-3 flex-shrink-0" />
-                                      </a>
+                                      </button>
                                     );
                                   })}
                                 </div>
@@ -7133,6 +7146,7 @@ function resolveCreatorHandle(
 ): string {
   const candidates = [
     scheduleItem?.creatorHandle,
+    extractTiktokUsername(getOfficialCreativeUrl(scheduleItem)),
     linkedTikTokLink?.creatorHandle,
     extractTiktokUsername(linkedTikTokLink?.link || ''),
     manualFallback
@@ -7234,63 +7248,13 @@ async function uploadProductionAsset(params: {
   scope: string;
   kind: 'audio' | 'video' | 'finished';
 }) {
-  const { file, folderName, finalName, userId, scope, kind } = params;
-
-  try {
-    const folderRes = await fetch('/api/drive/folder', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: folderName })
-    });
-    const folderData = await readJsonResponse(folderRes);
-    if (!folderRes.ok) throw new Error(folderData.error || "Google Drive nao configurado.");
-
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('parentId', folderData.id);
-    formData.append('fileName', finalName);
-
-    const uploadResponse = await fetch('/api/drive/upload', {
-      method: 'POST',
-      body: formData
-    });
-    const driveFile = await readJsonResponse(uploadResponse);
-    if (!uploadResponse.ok) throw new Error(driveFile.error || "Erro no upload do servidor.");
-
-    return {
-      url: driveFile.webViewLink,
-      name: driveFile.name || finalName,
-      provider: 'google_drive'
-    };
-  } catch (driveError: any) {
-    console.warn('[Upload] Google Drive falhou. Tentando Firebase Storage.', driveError);
-
-    const storagePath = [
-      'production_uploads',
-      sanitizeStoragePathPart(scope),
-      sanitizeStoragePathPart(userId),
-      sanitizeStoragePathPart(kind),
-      sanitizeStoragePathPart(folderName),
-      `${Date.now()}_${sanitizeStoragePathPart(finalName)}`
-    ].join('/');
-
-    try {
-      const fileRef = ref(storage, storagePath);
-      await uploadBytes(fileRef, file, { contentType: file.type || 'application/octet-stream' });
-      const url = await getDownloadURL(fileRef);
-      return {
-        url,
-        name: finalName,
-        provider: 'firebase_storage',
-        storagePath
-      };
-    } catch (storageError: any) {
-      console.error('[Upload] Firebase Storage tambem falhou.', storageError);
-      const driveMessage = driveError?.message ? `Drive: ${driveError.message}` : 'Drive indisponivel.';
-      const storageMessage = storageError?.message ? `Storage: ${storageError.message}` : 'Storage indisponivel.';
-      throw new Error(`Nao foi possivel enviar o arquivo. ${driveMessage} ${storageMessage}`);
-    }
-  }
+  const { file, folderName, finalName, kind } = params;
+  return uploadProductionFile({
+    file,
+    scheduleId: folderName,
+    itemId: kind,
+    baseName: finalName
+  });
 }
 
 function TiktokVideoIdentifier({ tiktokLinks, user, viewMode, linkedProducer, pendingLinkId, onPendingLinkAccepted }: { tiktokLinks: TiktokLink[], user: FirebaseUser, viewMode: ViewMode, linkedProducer?: Producer, pendingLinkId?: string | null, onPendingLinkAccepted?: (link: TiktokLink) => void }) {
@@ -7302,16 +7266,16 @@ function TiktokVideoIdentifier({ tiktokLinks, user, viewMode, linkedProducer, pe
       <div className="space-y-1">
         <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-          Identificador de Video TikTok
+          Video Minerado
         </h4>
         <p className="text-[11px] text-gray-500 leading-relaxed">
-          Insira o link do video do TikTok abaixo para verificar o status e salvar seu identificador de duplicidade.
+          O link oficial do criativo agora vem do campo Video Minerado preenchido pelo socio.
         </p>
       </div>
 
       <div className="space-y-4">
         <div>
-          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1.5">Link do Video TikTok</label>
+          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1.5">Video Minerado</label>
           <input
             type="url"
             value={tiktokInput}
@@ -7331,10 +7295,10 @@ function TiktokVideoIdentifier({ tiktokLinks, user, viewMode, linkedProducer, pe
               <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-2xl flex flex-col gap-1 animate-fadeIn">
                 <p className="text-xs text-red-400 font-bold flex items-center gap-1.5 uppercase tracking-wide">
                   <span className="w-2 h-2 rounded-full bg-red-500" />
-                  Ja Carregado!
+                  Video Minerado ja cadastrado
                 </p>
                 <p className="text-[11px] text-gray-400 leading-relaxed">
-                  Este video ja foi carregado por nossa equipe anteriormente. Por favor, utilize outro material para evitar duplicidade.
+                  Este Video Minerado ja existe no planejamento.
                 </p>
                 {matchingLink.createdAt && (
                   <p className="text-[9px] text-gray-600 font-mono mt-1 uppercase tracking-wider">
@@ -7352,7 +7316,7 @@ function TiktokVideoIdentifier({ tiktokLinks, user, viewMode, linkedProducer, pe
                 Link Livre (Nao Carregado)
               </p>
               <p className="text-[11px] text-gray-400 leading-relaxed">
-                Este identificador de video TikTok esta livre e limpo no sistema! Deseja registrar agora?
+                Este Video Minerado ainda nao existe no planejamento.
               </p>
               <button
                 type="button"
@@ -7532,6 +7496,26 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
         await updateDoc(doc(db, 'schedule', itemId), { dailyIndex: dIndex });
       }
 
+      {
+      const paddedIndex = String(dIndex).padStart(3, '0');
+      const uploadedFile = await uploadProductionFile({
+        file,
+        scheduleId: itemId,
+        itemId,
+        baseName: paddedIndex
+      });
+      const field = type === 'audio' ? 'audioMaterial' : 'videoMaterial';
+      const updates: any = { [field]: arrayUnion(uploadedFile) };
+
+      updates.materialAddedAt = new Date().toISOString();
+      if (!item.productionCode) {
+        updates.productionCode = buildProductionCode(item, accounts, products, schedule);
+      }
+
+      await updateDoc(doc(db, 'schedule', itemId), updates);
+      return;
+      }
+
       const product = products.find(p => p.id === item.productId);
       const folderName = product ? `Influency_${product.name}` : 'Influency_Assets';
       
@@ -7565,7 +7549,7 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
       formData.append('parentId', folderId);
       formData.append('fileName', finalName);
 
-      const uploadResponse = await fetch('/api/drive/upload', {
+      const uploadResponse = await fetch('firebase-storage-migrated', {
         method: 'POST',
         body: formData
       });
@@ -7971,20 +7955,20 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
                                     </div>
                                     <Video className="w-4 h-4 text-orange-500 shrink-0" />
                                   </div>
-                                  {item.minedVideoUrl ? (
+                                  {getOfficialCreativeUrl(item) ? (
                                     <div className="space-y-3">
                                       <a
-                                        href={item.minedVideoUrl}
+                                        href={getOfficialCreativeUrl(item)}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="block text-xs text-gray-300 hover:text-orange-400 font-bold truncate"
-                                        title={item.minedVideoUrl}
+                                        title={getOfficialCreativeUrl(item)}
                                       >
-                                        {item.minedVideoUrl}
+                                        {getOfficialCreativeUrl(item)}
                                       </a>
                                       <div className="grid grid-cols-1 gap-2">
                                         <a
-                                          href={item.minedVideoUrl}
+                                          href={getOfficialCreativeUrl(item)}
                                           target="_blank"
                                           rel="noopener noreferrer"
                                           className="w-full py-3 bg-orange-500/10 hover:bg-orange-500 hover:text-black border border-orange-500/25 text-orange-400 font-black text-[10px] uppercase rounded-xl tracking-widest transition-all text-center flex items-center justify-center gap-2"
@@ -8552,6 +8536,20 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
       }
     }
 
+    const officialCreativeUrl = newItem.minedVideoUrl.trim();
+    if (officialCreativeUrl) {
+      const officialCreativeKey = getOfficialCreativeKey(officialCreativeUrl);
+      const duplicatedCreative = schedule.find(item => {
+        const existingCreativeUrl = getOfficialCreativeUrl(item);
+        return existingCreativeUrl && getOfficialCreativeKey(existingCreativeUrl) === officialCreativeKey;
+      });
+
+      if (duplicatedCreative) {
+        alert('Este Video Minerado ja existe no planejamento. Use outro criativo para evitar duplicidade.');
+        return;
+      }
+    }
+
     try {
       const sameDayItems = schedule.filter(s => s.date === newItem.date);
       const maxIndex = sameDayItems.reduce((max, s) => Math.max(max, s.dailyIndex || 0), 0);
@@ -8581,7 +8579,7 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
         addDoc(collection(db, 'schedule'), {
           ...newItem,
           productId: item.productId,
-          minedVideoUrl: newItem.minedVideoUrl.trim(),
+          minedVideoUrl: officialCreativeUrl,
           producerId: '',
           supplierId: chooseSupplierId(),
           scope: viewMode === ViewMode.COMPANY ? 'COMPANY' : 'PERSONAL',
@@ -10249,15 +10247,6 @@ function ReadyVideosManager({ schedule, accounts, products, producers, user, isP
 
   const [downloadingFile, setDownloadingFile] = useState<string | null>(null);
 
-  const getGoogleDriveId = (url: string): string | null => {
-    if (!url) return null;
-    const matchD = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-    if (matchD) return matchD[1];
-    const matchId = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-    if (matchId) return matchId[1];
-    return null;
-  };
-
   const markReadyVideoAsDownloadedByPartner = async (item: ScheduleItem) => {
     if (!isPartner || item.status === ScheduleStatus.POSTED) return;
 
@@ -10266,6 +10255,7 @@ function ReadyVideosManager({ schedule, accounts, products, producers, user, isP
         status: ScheduleStatus.POSTED,
         postedAt: serverTimestamp(),
         postedBy: user.uid,
+        downloadedByPartner: true,
         awaitingPostLink: true,
         postLink: null,
         videoLink: null,
@@ -10276,24 +10266,14 @@ function ReadyVideosManager({ schedule, accounts, products, producers, user, isP
     }
   };
 
-  const handleDownload = async (item: ScheduleItem, fileUrl: string, fileName: string) => {
+  const handleDownload = async (item: ScheduleItem, file: any) => {
     await markReadyVideoAsDownloadedByPartner(item);
-
-    const driveId = getGoogleDriveId(fileUrl);
-    if (driveId) {
-      setDownloadingFile(fileUrl);
-      try {
-        // Trigger seamless direct download utilizing custom server endpoint
-        window.location.href = `/api/drive/download?fileId=${driveId}`;
-      } catch (err) {
-        console.error("Direct download stream error:", err);
-        alert("Erro no download nativo. Abrindo link em nova aba.");
-        window.open(fileUrl, '_blank');
-      } finally {
-        setTimeout(() => setDownloadingFile(null), 2500);
-      }
-    } else {
-      window.open(fileUrl, '_blank');
+    const fileKey = getFileUrl(file) || getFileName(file);
+    setDownloadingFile(fileKey);
+    try {
+      await handleDownloadFile(file);
+    } finally {
+      setTimeout(() => setDownloadingFile(null), 800);
     }
   };
 
@@ -10380,12 +10360,12 @@ function ReadyVideosManager({ schedule, accounts, products, producers, user, isP
                     )
                   ) : (
                     videosList.map((file: any, fIdx) => {
-                      const url = typeof file === 'string' ? file : file.url;
+                      const url = getFileUrl(file);
                       const name = typeof file === 'string' ? `Video pronto #${fIdx + 1}` : (file.name || `Video pronto #${fIdx + 1}`);
                       return (
                         <button
                           key={fIdx}
-                          onClick={() => handleDownload(item, url, name)}
+                          onClick={() => handleDownload(item, file)}
                           disabled={downloadingFile === url}
                           className="w-full bg-white hover:bg-gray-100 text-black py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg hover:shadow-white/5 active:scale-95 disabled:opacity-50 disabled:cursor-wait"
                         >
