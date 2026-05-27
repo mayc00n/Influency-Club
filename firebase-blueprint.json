@@ -67,6 +67,7 @@
         "accountId": { "type": "string", "description": "Ref to Account" },
         "productId": { "type": "string", "description": "Ref to Product" },
         "videoSource": { "type": "string", "description": "Original source URL/Description" },
+        "minedVideoUrl": { "type": "string", "description": "Mined video URL provided by the partner for supplier reference" },
         "creatorHandle": { "type": "string", "description": "Reference creator handle" },
         "creatorLinkId": { "type": "string", "description": "Ref to TikTok reference link" },
         "sourceVideoLink": { "type": "string", "description": "Original reference video URL" },

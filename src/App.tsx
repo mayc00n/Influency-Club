@@ -7360,7 +7360,7 @@ function TiktokVideoIdentifier({ tiktokLinks, user, viewMode, linkedProducer, pe
 
 function Planner({ schedule, accounts, products, user, viewMode, producers, tiktokLinks = [] }: { schedule: ScheduleItem[], accounts: Account[], products: Product[], user: FirebaseUser, viewMode: ViewMode, producers: Producer[], tiktokLinks?: TiktokLink[] }) {
   const [showAdd, setShowAdd] = useState(false);
-  const [newItem, setNewItem] = useState({ date: getLocalDateString(), accountId: '', productId: '', producerId: '', supplierId: '', status: ScheduleStatus.PLANNED });
+  const [newItem, setNewItem] = useState({ date: getLocalDateString(), accountId: '', productId: '', producerId: '', supplierId: '', minedVideoUrl: '', status: ScheduleStatus.PLANNED });
   const [postCount, setPostCount] = useState(1);
   const [distributionType, setDistributionType] = useState<'same' | 'different'>('same');
   const [assignments, setAssignments] = useState<{ productId: string, count: number }[]>([]);
@@ -7917,6 +7917,52 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
                                   )}
                                 </div>
 
+                                <div className="bg-[#0c0c0c] border border-[#222] rounded-2xl p-4 space-y-3">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                      <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Vídeo Minerado</p>
+                                      <p className="text-[11px] text-gray-500 mt-1">Referência para preparar áudio e material bruto.</p>
+                                    </div>
+                                    <Video className="w-4 h-4 text-orange-500 shrink-0" />
+                                  </div>
+                                  {item.minedVideoUrl ? (
+                                    <div className="space-y-3">
+                                      <a
+                                        href={item.minedVideoUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="block text-xs text-gray-300 hover:text-orange-400 font-bold truncate"
+                                        title={item.minedVideoUrl}
+                                      >
+                                        {item.minedVideoUrl}
+                                      </a>
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                        <a
+                                          href={item.minedVideoUrl}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="w-full py-3 bg-orange-500/10 hover:bg-orange-500 hover:text-black border border-orange-500/25 text-orange-400 font-black text-[10px] uppercase rounded-xl tracking-widest transition-all text-center flex items-center justify-center gap-2"
+                                        >
+                                          <ExternalLink className="w-3.5 h-3.5" />
+                                          Abrir vídeo
+                                        </a>
+                                        <a
+                                          href={item.minedVideoUrl}
+                                          download
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="w-full py-3 bg-[#1a1a1a] hover:bg-white hover:text-black border border-[#222] text-gray-300 font-black text-[10px] uppercase rounded-xl tracking-widest transition-all text-center flex items-center justify-center gap-2"
+                                        >
+                                          <Download className="w-3.5 h-3.5" />
+                                          Baixar vídeo
+                                        </a>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <p className="text-xs text-gray-600 italic">Nenhum vídeo minerado informado.</p>
+                                  )}
+                                </div>
+
                                 {/* If Planned, show form */}
                                 {isPlanned ? (
                                   <div className="space-y-4 pt-2 border-t border-[#1a1a1a]">
@@ -8136,7 +8182,7 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
                         </button>
                       )}
 
-                      {product.referenceUrl && (
+                      {false && product.referenceUrl && (
                         <a 
                           href={product.referenceUrl} 
                           target="_blank" 
@@ -8499,6 +8545,7 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
         addDoc(collection(db, 'schedule'), {
           ...newItem,
           productId: item.productId,
+          minedVideoUrl: newItem.minedVideoUrl.trim(),
           producerId: '',
           supplierId: chooseSupplierId(),
           scope: viewMode === ViewMode.COMPANY ? 'COMPANY' : 'PERSONAL',
@@ -8510,6 +8557,7 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
       ));
       
       setShowAdd(false);
+      setNewItem({ date: getLocalDateString(), accountId: '', productId: '', producerId: '', supplierId: '', minedVideoUrl: '', status: ScheduleStatus.PLANNED });
       setPostCount(1);
       setDistributionType('same');
       setAssignments([]);
@@ -8788,6 +8836,20 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
                 </div>
               </div>
             )}
+
+            <div className="space-y-2 md:col-span-2 lg:col-span-4">
+              <label className="text-xs font-black text-gray-500 uppercase tracking-widest px-1">Vídeo Minerado</label>
+              <div className="relative">
+                <Video className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <input
+                  type="url"
+                  placeholder="https://..."
+                  className="w-full bg-[#0a0a0a] border border-[#222] rounded-2xl pl-11 pr-4 py-3 text-white outline-none focus:border-orange-500 transition-colors text-sm"
+                  value={newItem.minedVideoUrl}
+                  onChange={e => setNewItem({...newItem, minedVideoUrl: e.target.value})}
+                />
+              </div>
+            </div>
           </div>
 
           {postCount > 1 && (

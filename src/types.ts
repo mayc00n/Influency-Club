@@ -83,6 +83,7 @@ export interface ScheduleItem {
   accountId: string;
   productId: string;
   videoSource?: string;
+  minedVideoUrl?: string;
   videoLink?: string;
   audioMaterial?: { url: string; name: string }[];
   videoMaterial?: { url: string; name: string }[];
