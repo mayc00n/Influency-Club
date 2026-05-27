@@ -4314,58 +4314,15 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
       const isSupplierMaterialUpload = userRole === 'supplier' && (type === 'audio' || type === 'video');
 
       if (itemId === 'virtual-draft-item') {
-        const blockMessages = isSupplierMaterialUpload
-          ? getSupplierUploadBlockMessages(true, true)
-          : [];
-        if (blockMessages.length > 0) {
-          alert(blockMessages.join('\n'));
-          return;
-        }
-        const virtualUploadWouldComplete = isSupplierMaterialUpload && ((type === 'audio' || hasSupplierAudioMaterial(item as ScheduleItem)) && (type === 'video' || hasSupplierVideoMaterial(item as ScheduleItem)));
-        if (virtualUploadWouldComplete && activeLinkedEditors.length === 0) {
-          alert('Nenhum editor ativo vinculado disponivel para receber este material.');
-          return;
-        }
-        const alreadyNumberedItems = schedule.filter(s => s.date === todayStr && s.dailyIndex && ( (Array.isArray(s.audioMaterial) && s.audioMaterial.length > 0) || (Array.isArray(s.videoMaterial) && s.videoMaterial.length > 0) ));
-        const maxIndex = alreadyNumberedItems.reduce((max, s) => Math.max(max, s.dailyIndex || 0), 0);
-        const dIndex = maxIndex + 1;
-
-        const docRef = await addDoc(collection(db, 'schedule'), {
-          date: todayStr,
-          accountId: null,
-          productId: activeProductId || '',
-          producerId: null,
-          supplierId: linkedProducer?.id || null,
-          status: ScheduleStatus.PLANNED,
-          userId: user.uid,
-          scope: viewMode || 'PERSONAL',
-          dailyIndex: dIndex,
-          productionCode: buildProductionCode({ date: todayStr, accountId: '', productId: activeProductId || '', dailyIndex: dIndex }, accounts, products, schedule),
-          createdAt: serverTimestamp(),
-          audioMaterial: [],
-          videoMaterial: [],
-          finishedVideoUrl: []
-        });
-        
-        targetItemId = docRef.id;
-        item = {
-          id: targetItemId,
-          userId: user.uid,
-          date: todayStr,
-          accountId: '',
-          productId: activeProductId || '',
-          producerId: '',
-          supplierId: linkedProducer?.id || '',
-          status: ScheduleStatus.PLANNED,
-          audioMaterial: [],
-          videoMaterial: [],
-          finishedVideoUrl: [],
-          dailyIndex: dIndex,
-          productionCode: buildProductionCode({ date: todayStr, accountId: '', productId: activeProductId || '', dailyIndex: dIndex }, accounts, products, schedule)
-        };
+        alert('Nenhum próximo material pendente para este produto.');
+        return;
       }
 
       if (!item) return;
+      if (isSupplierMaterialUpload && (!item.id || !item.accountId || !item.productId)) {
+        alert('Nenhum planejamento real selecionado para upload.');
+        return;
+      }
       if (isSupplierMaterialUpload && isSupplierDone(item)) {
         alert('Este item ja foi concluido.');
         return;
@@ -4723,21 +4680,8 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
     const firstUncompletedIdx = allProductItems.findIndex(item => !isSupplierDone(item));
     if (userRole === 'editor') return allProductItems;
     if (userRole === 'supplier' && firstUncompletedIdx !== -1) return [allProductItems[firstUncompletedIdx]];
-
-    const virtualItem: ScheduleItem = {
-      id: 'virtual-draft-item',
-      userId: user?.uid || '',
-      accountId: '',
-      productId: activeProductId || '',
-      producerId: activeProducerId === 'unassigned' ? '' : (activeProducerId || ''),
-      supplierId: linkedProducer?.id || '',
-      status: ScheduleStatus.PLANNED,
-      audioMaterial: [],
-      videoMaterial: [],
-      finishedVideoUrl: [],
-      date: todayStr,
-    };
-    return [...allProductItems, virtualItem];
+    if (userRole === 'supplier') return [];
+    return allProductItems;
   };
 
   const handleLinkEditorToProductionItem = async (item: ScheduleItem, editorId: string) => {
@@ -5131,7 +5075,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                         <div className="bg-[#141414] border border-[#222] rounded-3xl px-5 py-10 text-center">
                           <p className="text-sm font-black text-white uppercase tracking-widest">Nenhum material pendente</p>
                           <p className="text-xs text-gray-500 leading-relaxed mt-2">
-                            Este produto continua vinculado a voce. Quando novos materiais chegarem, eles aparecerao aqui; o historico permanece disponivel no Cofre de Conteudos abaixo.
+                            Nenhum próximo material pendente para este produto.
                           </p>
                         </div>
                       );
@@ -5350,7 +5294,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                               <div className="max-w-md mx-auto space-y-2">
                                 <p className="text-sm font-black text-white uppercase tracking-widest">Nenhum material pendente</p>
                                 <p className="text-xs text-gray-500 leading-relaxed">
-                                  Este produto continua vinculado a voce. Quando novos materiais chegarem, eles aparecerao aqui; o historico permanece disponivel no Cofre de Conteudos abaixo.
+                                  Nenhum próximo material pendente para este produto.
                                 </p>
                               </div>
                             </td>
