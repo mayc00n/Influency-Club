@@ -270,6 +270,15 @@ function getOfficialCreativeKey(value: string): string {
   return normalizeTiktokUrl(value.trim());
 }
 
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function needsPartnerPublicationReview(item: ScheduleItem): boolean {
   return (
     hasFinishedVideo(item) &&
@@ -8455,7 +8464,10 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
   }, [filteredProductsForPlanner, productPickerSearch]);
 
   const handleCreate = async () => {
-    if (!newItem.accountId) return;
+    if (!isPlannerReadyToCreate) {
+      alert('Preencha data, conta, quantidade, produto e um Video Minerado valido.');
+      return;
+    }
     
     // Prepare items to create
     let itemsToCreate: { productId: string }[] = [];
@@ -8484,7 +8496,7 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
     if (officialCreativeUrl) {
       const officialCreativeKey = getOfficialCreativeKey(officialCreativeUrl);
       const duplicatedCreative = schedule.find(item => {
-        const existingCreativeUrl = getOfficialCreativeUrl(item);
+        const existingCreativeUrl = item.minedVideoUrl?.trim() || '';
         return existingCreativeUrl && getOfficialCreativeKey(existingCreativeUrl) === officialCreativeKey;
       });
 
@@ -8554,6 +8566,20 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
   };
 
   const totalAssigned = assignments.reduce((acc, curr) => acc + curr.count, 0);
+  const plannerProductIds = distributionType === 'different' && postCount > 1
+    ? assignments.filter(assignment => assignment.count > 0).map(assignment => assignment.productId)
+    : [newItem.productId].filter(Boolean);
+  const hasRequiredPlannerProducts = plannerProductIds.length > 0 && plannerProductIds.every(Boolean);
+  const hasValidPlannerMinedVideo = isValidHttpUrl(newItem.minedVideoUrl);
+  const hasValidPlannerDistribution = distributionType !== 'different' || postCount <= 1 || totalAssigned === postCount;
+  const isPlannerReadyToCreate = Boolean(
+    newItem.date &&
+    newItem.accountId &&
+    postCount > 0 &&
+    hasRequiredPlannerProducts &&
+    hasValidPlannerDistribution &&
+    hasValidPlannerMinedVideo
+  );
   
   const handleStatusChange = async (itemId: string, newStatus: ScheduleStatus) => {
     if (newStatus === ScheduleStatus.POSTED) {
@@ -8916,9 +8942,9 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
           <div className="flex justify-end pt-4">
             <button 
               onClick={handleCreate} 
-              disabled={!newItem.accountId || (distributionType === 'different' && postCount > 1 && totalAssigned !== postCount)}
+              disabled={!isPlannerReadyToCreate}
               className={`px-12 py-4 rounded-2xl font-black text-sm uppercase tracking-widest transition-all ${
-                !newItem.accountId || (distributionType === 'different' && postCount > 1 && totalAssigned !== postCount)
+                !isPlannerReadyToCreate
                   ? 'bg-[#1a1a1a] text-gray-600 cursor-not-allowed'
                   : 'bg-white text-black hover:bg-orange-500 hover:shadow-[0_0_30px_rgba(249,115,22,0.4)]'
               }`}
