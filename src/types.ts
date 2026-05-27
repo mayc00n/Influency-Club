@@ -102,6 +102,7 @@ export interface ScheduleItem {
   postedAt?: any;
   postedBy?: string;
   awaitingPostLink?: boolean;
+  downloadedByPartner?: boolean;
   postLink?: string | null;
   materialAddedAt?: string;
   dailyIndex?: number;

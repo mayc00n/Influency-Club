@@ -148,6 +148,15 @@ function hasFinishedVideo(item: ScheduleItem): boolean {
   return normalizeFileList(item.finishedVideoUrl).length > 0;
 }
 
+function needsPartnerPublicationReview(item: ScheduleItem): boolean {
+  return (
+    hasFinishedVideo(item) &&
+    item.status !== ScheduleStatus.POSTED &&
+    item.awaitingPostLink !== true &&
+    item.downloadedByPartner !== true
+  );
+}
+
 function needsEditorDashboardAction(item: ScheduleItem, editorId?: string): boolean {
   if (!editorId || item.producerId !== editorId) return false;
   if (hasFinishedVideo(item)) return false;
@@ -1485,7 +1494,7 @@ export default function App() {
     };
   }).filter(a => a.totalRevenue > 0).sort((a, b) => b.totalRevenue - a.totalRevenue);
 
-  const readyVideosCount = schedule.filter(s => s.status === ScheduleStatus.PRODUCED || s.status === ScheduleStatus.POSTED).length;
+  const readyVideosCount = schedule.filter(needsPartnerPublicationReview).length;
 
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
