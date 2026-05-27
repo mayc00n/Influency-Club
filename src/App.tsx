@@ -4062,6 +4062,14 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
 
   const currentProducer = producers.find(p => p.id === activeProducerId);
   const currentProduct = products.find(p => p.id === activeProductId);
+  const minedVideoUrlsForActiveProduct = useMemo(() => {
+    if (!activeProducerId || !activeProductId) return [];
+    const urls = pendingProduction
+      .filter(item => item.productId === activeProductId && item.supplierId === activeProducerId)
+      .map(item => item.minedVideoUrl?.trim())
+      .filter((url): url is string => !!url);
+    return Array.from(new Set(urls));
+  }, [activeProducerId, activeProductId, pendingProduction]);
 
   const handleAddProducer = async () => {
     if (!newProducerName.trim()) return;
@@ -4749,6 +4757,30 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
     );
   };
 
+  const renderMinedVideoReference = (item: ScheduleItem, compact = false) => {
+    const minedVideoUrl = item.minedVideoUrl?.trim();
+
+    return (
+      <div className={`bg-[#0d0d0d] border border-[#222] rounded-2xl ${compact ? 'p-3' : 'p-4'} min-w-0`}>
+        <p className="text-[9px] font-black uppercase tracking-widest text-gray-600 mb-2">Vídeo Minerado</p>
+        {minedVideoUrl ? (
+          <a
+            href={minedVideoUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex max-w-full items-center justify-center gap-2 bg-orange-500/10 hover:bg-orange-500 hover:text-black border border-orange-500/25 text-orange-400 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+            title={minedVideoUrl}
+          >
+            <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Abrir vídeo minerado</span>
+          </a>
+        ) : (
+          <p className="text-xs text-gray-600 italic">Nenhum vídeo minerado informado.</p>
+        )}
+      </div>
+    );
+  };
+
   const renderSupplierUploadBox = (
     item: ScheduleItem,
     type: 'audio' | 'video',
@@ -5018,31 +5050,29 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                 {userRole === 'supplier' && (
                   <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px] gap-6 items-start">
                     <div className="bg-[#141414] border border-[#222] rounded-[2rem] p-6">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-orange-500 mb-2">Vinculo de Referencia</p>
-                      <h4 className="text-white font-black text-lg italic">Registre o video TikTok antes de subir os materiais</h4>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-orange-500 mb-2">Vídeo Minerado</p>
+                      <h4 className="text-white font-black text-lg italic">Referência enviada pelo sócio para preparar os materiais</h4>
                       <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-                        O ultimo link livre deste fornecedor sera vinculado automaticamente ao audio ou video bruto enviado para a esteira.
+                        Use este vídeo como base para preparar áudio e material bruto. O identificador TikTok continua separado ao lado.
                       </p>
-                      {currentProduct?.referenceUrl ? (
-                        <a
-                          href={currentProduct.referenceUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-5 inline-flex w-full sm:w-auto items-center justify-center gap-2 bg-orange-500 text-black hover:bg-orange-400 px-5 py-3 rounded-2xl text-xs font-black uppercase tracking-widest transition-all"
-                        >
-                          <ExternalLink className="w-4 h-4" />
-                          Ir para o produto
-                        </a>
+                      {minedVideoUrlsForActiveProduct.length > 0 ? (
+                        <div className="mt-5 flex flex-col gap-2">
+                          {minedVideoUrlsForActiveProduct.map((url, index) => (
+                            <a
+                              key={url}
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex w-full sm:w-auto items-center justify-center gap-2 bg-orange-500 text-black hover:bg-orange-400 px-5 py-3 rounded-2xl text-xs font-black uppercase tracking-widest transition-all"
+                              title={url}
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                              {minedVideoUrlsForActiveProduct.length === 1 ? 'Abrir vídeo minerado' : `Abrir vídeo minerado ${index + 1}`}
+                            </a>
+                          ))}
+                        </div>
                       ) : (
-                        <button
-                          type="button"
-                          disabled
-                          title="Este produto ainda nao possui link referencia cadastrado."
-                          className="mt-5 inline-flex w-full sm:w-auto items-center justify-center gap-2 bg-[#0a0a0a] border border-[#222] text-gray-600 px-5 py-3 rounded-2xl text-xs font-black uppercase tracking-widest cursor-not-allowed"
-                        >
-                          <ExternalLink className="w-4 h-4" />
-                          Ir para o produto
-                        </button>
+                        <p className="text-xs text-gray-600 italic mt-5">Nenhum vídeo minerado informado.</p>
                       )}
                     </div>
                     <TiktokVideoIdentifier
@@ -5140,6 +5170,8 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                               </div>
                             )}
                           </div>
+
+                          {userRole === 'supplier' && renderMinedVideoReference(item, true)}
 
                           {userRole === 'supplier' ? (
                             <div className="space-y-3 min-w-0">
@@ -5338,11 +5370,16 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                        }`}>
                                          {hasPartialSupplierMaterial(item) ? 'Parcial' : 'Pendente'}
                                        </span>
-                                     )}
+                                   )}
+                                 </div>
+                                 <p className="text-[10px] text-gray-500 font-bold uppercase mt-0.5">{acc?.name || 'Sem Conta'}</p>
+                                 {userRole === 'supplier' && (
+                                   <div className="mt-3">
+                                     {renderMinedVideoReference(item, true)}
                                    </div>
-                                   <p className="text-[10px] text-gray-500 font-bold uppercase mt-0.5">{acc?.name || 'Sem Conta'}</p>
-                                   {userRole !== 'supplier' && !item.producerId && (
-                                     <div className="mt-2 text-left">
+                                 )}
+                                 {userRole !== 'supplier' && !item.producerId && (
+                                   <div className="mt-2 text-left">
                                        {renderEditorLinkSelect(item, 'max-w-[180px] py-1.5 px-2.5')}
                                      </div>
                                    )}
@@ -7936,7 +7973,7 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
                                       >
                                         {item.minedVideoUrl}
                                       </a>
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                      <div className="grid grid-cols-1 gap-2">
                                         <a
                                           href={item.minedVideoUrl}
                                           target="_blank"
@@ -7944,17 +7981,7 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
                                           className="w-full py-3 bg-orange-500/10 hover:bg-orange-500 hover:text-black border border-orange-500/25 text-orange-400 font-black text-[10px] uppercase rounded-xl tracking-widest transition-all text-center flex items-center justify-center gap-2"
                                         >
                                           <ExternalLink className="w-3.5 h-3.5" />
-                                          Abrir vídeo
-                                        </a>
-                                        <a
-                                          href={item.minedVideoUrl}
-                                          download
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="w-full py-3 bg-[#1a1a1a] hover:bg-white hover:text-black border border-[#222] text-gray-300 font-black text-[10px] uppercase rounded-xl tracking-widest transition-all text-center flex items-center justify-center gap-2"
-                                        >
-                                          <Download className="w-3.5 h-3.5" />
-                                          Baixar vídeo
+                                          Abrir vídeo minerado
                                         </a>
                                       </div>
                                     </div>
