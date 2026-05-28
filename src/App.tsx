@@ -7332,6 +7332,8 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
   const [linkError, setLinkError] = useState<string | null>(null);
   const [productPickerOpen, setProductPickerOpen] = useState(false);
   const [productPickerSearch, setProductPickerSearch] = useState('');
+  const [editingPlannerItem, setEditingPlannerItem] = useState<ScheduleItem | null>(null);
+  const [editPlannerDraft, setEditPlannerDraft] = useState({ accountId: '', productId: '' });
 
   const linkedProducer = producers.find(p => isProducerLinkedToUser(p, user));
   const userRole = getProducerLinkedRole(linkedProducer);
@@ -8463,6 +8465,45 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
     );
   }, [filteredProductsForPlanner, productPickerSearch]);
 
+  const openPlannerEdit = (item: ScheduleItem) => {
+    setEditingPlannerItem(item);
+    setEditPlannerDraft({
+      accountId: item.accountId || '',
+      productId: item.productId || ''
+    });
+  };
+
+  const closePlannerEdit = () => {
+    setEditingPlannerItem(null);
+    setEditPlannerDraft({ accountId: '', productId: '' });
+  };
+
+  const handleSavePlannerEdit = async () => {
+    if (!editingPlannerItem) return;
+    if (!editPlannerDraft.accountId) {
+      alert('Selecione uma conta de destino.');
+      return;
+    }
+
+    try {
+      const updatedIdentity = {
+        ...editingPlannerItem,
+        accountId: editPlannerDraft.accountId,
+        productId: editPlannerDraft.productId
+      };
+
+      await updateDoc(doc(db, 'schedule', editingPlannerItem.id), {
+        accountId: editPlannerDraft.accountId,
+        productId: editPlannerDraft.productId,
+        productionCode: buildProductionCode(updatedIdentity, accounts, products, schedule),
+        updatedAt: serverTimestamp()
+      });
+      closePlannerEdit();
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `schedule/${editingPlannerItem.id}`);
+    }
+  };
+
   const handleCreate = async () => {
     if (!isPlannerReadyToCreate) {
       alert('Preencha data, conta, quantidade, produto e um Video Minerado valido.');
@@ -9021,6 +9062,13 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
                     </button>
                   )}
                   <button 
+                    onClick={() => openPlannerEdit(item)}
+                    className="px-4 py-3 text-gray-400 hover:text-white transition-colors bg-[#0a0a0a] border border-[#222] rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-inner"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    Editar
+                  </button>
+                  <button 
                     onClick={() => handleDelete(item.id)}
                     className="p-3 text-gray-600 hover:text-red-500 transition-colors bg-[#0a0a0a] border border-[#222] rounded-2xl md:opacity-0 md:group-hover:opacity-100 shadow-inner"
                   >
@@ -9055,6 +9103,77 @@ function Planner({ schedule, accounts, products, user, viewMode, producers, tikt
       </div>
 
       <AnimatePresence>
+        {editingPlannerItem && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+             <motion.div 
+               initial={{ opacity: 0 }} 
+               animate={{ opacity: 1 }} 
+               exit={{ opacity: 0 }}
+               className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+               onClick={closePlannerEdit}
+             />
+             <motion.div 
+               initial={{ scale: 0.9, opacity: 0, y: 20 }}
+               animate={{ scale: 1, opacity: 1, y: 0 }}
+               exit={{ scale: 0.9, opacity: 0, y: 20 }}
+               className="bg-[#141414] border border-[#222] p-8 rounded-[2.5rem] max-w-lg w-full relative z-10 shadow-2xl"
+             >
+                <div className="w-16 h-16 bg-orange-500/10 rounded-2xl flex items-center justify-center mb-6 border border-orange-500/20">
+                  <Pencil className="w-8 h-8 text-orange-500" />
+                </div>
+                <h3 className="text-2xl font-black text-white mb-2">Editar Planejamento</h3>
+                <p className="text-gray-500 text-sm mb-6">
+                  Atualize apenas o produto principal e a conta de destino deste item.
+                </p>
+
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-1">Conta de Destino</label>
+                    <select
+                      className="w-full bg-[#0a0a0a] border border-[#222] rounded-2xl px-5 py-4 text-white outline-none focus:border-orange-500 transition-all font-medium"
+                      value={editPlannerDraft.accountId}
+                      onChange={e => setEditPlannerDraft(prev => ({ ...prev, accountId: e.target.value }))}
+                    >
+                      <option value="">Selecionar Conta</option>
+                      {accounts.map(account => (
+                        <option key={account.id} value={account.id}>{account.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-gray-500 uppercase tracking-widest px-1">Produto Principal</label>
+                    <select
+                      className="w-full bg-[#0a0a0a] border border-[#222] rounded-2xl px-5 py-4 text-white outline-none focus:border-orange-500 transition-all font-medium"
+                      value={editPlannerDraft.productId}
+                      onChange={e => setEditPlannerDraft(prev => ({ ...prev, productId: e.target.value }))}
+                    >
+                      <option value="">Sem produto</option>
+                      {products.map(product => (
+                        <option key={product.id} value={product.id}>{product.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex gap-3 pt-4">
+                    <button 
+                      onClick={closePlannerEdit}
+                      className="flex-1 py-4 bg-[#1a1a1a] border border-[#222] text-gray-500 font-black text-xs uppercase tracking-widest rounded-2xl hover:bg-[#222] hover:text-white transition-all"
+                    >
+                      Cancelar
+                    </button>
+                    <button 
+                      onClick={handleSavePlannerEdit}
+                      className="flex-1 py-4 bg-white text-black font-black text-xs uppercase tracking-widest rounded-2xl hover:bg-orange-500 transition-all shadow-xl"
+                    >
+                      Salvar alterações
+                    </button>
+                  </div>
+                </div>
+             </motion.div>
+          </div>
+        )}
+
         {statusModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
              <motion.div 
