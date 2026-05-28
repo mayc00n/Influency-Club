@@ -211,9 +211,31 @@ async function uploadProductionFile(params: {
   };
 }
 
+async function downloadFile(url: string, filename: string) {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Download failed with status ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename || 'arquivo';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(blobUrl);
+  } catch (err) {
+    console.error('Blob download failed, opening file URL as fallback:', err);
+    window.open(url, '_blank');
+  }
+}
+
 async function handleDownloadFile(file: any) {
   try {
-    let downloadURL = typeof file === 'string' ? '' : file?.downloadURL;
+    let downloadURL = getFileUrl(file);
     if (!downloadURL && typeof file !== 'string' && file?.storagePath) {
       downloadURL = await getDownloadURL(ref(storage, file.storagePath));
     }
@@ -223,13 +245,7 @@ async function handleDownloadFile(file: any) {
       return;
     }
 
-    const link = document.createElement('a');
-    link.href = downloadURL;
-    link.download = getFileName(file);
-    link.rel = 'noopener noreferrer';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    await downloadFile(downloadURL, getFileName(file));
   } catch (err) {
     console.error('Download error:', err);
     alert('Arquivo antigo sem URL permanente. Reenvie o material.');
@@ -6011,19 +6027,14 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                         </td>
                         <td data-label="Acoes" className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
-                            <a 
-                              href={asset.url} 
-                              target="_blank" 
-                              rel="noreferrer" 
+                            <button
+                              type="button"
+                              onClick={() => downloadFile(asset.url, asset.name)}
                               className="p-2 bg-[#0a0a0a] border border-[#222] rounded-xl text-gray-400 hover:text-white transition-all hover:border-gray-500"
-                              title="Visualizar / Baixar"
+                              title="Baixar"
                             >
-                              {asset.type === 'finished' ? (
-                                <ExternalLink className="w-4 h-4" />
-                              ) : (
-                                <Download className="w-4 h-4" />
-                              )}
-                            </a>
+                              <Download className="w-4 h-4" />
+                            </button>
                             <button
                               onClick={() => handleDeleteAsset(asset.item, asset.type, asset.url)}
                               className="p-2 bg-red-500/5 hover:bg-red-500/10 border border-red-500/10 rounded-xl text-gray-500 hover:text-red-500 transition-all hover:border-red-500/20"
