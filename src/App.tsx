@@ -156,6 +156,18 @@ function getFileName(file: any, fallback = 'arquivo'): string {
   return file.displayName || file.name || file.originalName || fallback;
 }
 
+function ensureFileExtension(filename: string, extension: string): string {
+  const cleanExtension = extension.startsWith('.') ? extension : `.${extension}`;
+  const cleanName = (filename || 'arquivo').trim() || 'arquivo';
+  const lastSegment = cleanName.split('/').pop()?.split('?')[0].split('#')[0] || cleanName;
+  return /\.[a-z0-9]{2,5}$/i.test(lastSegment) ? cleanName : `${cleanName}${cleanExtension}`;
+}
+
+function getDownloadFileName(file: any, fallback = 'arquivo', extension?: string): string {
+  const filename = getFileName(file, fallback);
+  return extension ? ensureFileExtension(filename, extension) : filename;
+}
+
 function getFileExtension(fileName: string, mimeType = ''): string {
   const cleanName = fileName.split('?')[0].split('#')[0];
   const dotIndex = cleanName.lastIndexOf('.');
@@ -226,14 +238,14 @@ async function downloadFile(url: string, filename: string) {
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(blobUrl);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
   } catch (err) {
     console.error('Blob download failed, opening file URL as fallback:', err);
     window.open(url, '_blank');
   }
 }
 
-async function handleDownloadFile(file: any) {
+async function handleDownloadFile(file: any, options?: { filename?: string; extension?: string }) {
   try {
     let downloadURL = getFileUrl(file);
     if (!downloadURL && typeof file !== 'string' && file?.storagePath) {
@@ -245,11 +257,18 @@ async function handleDownloadFile(file: any) {
       return;
     }
 
-    await downloadFile(downloadURL, getFileName(file));
+    const filename = options?.filename
+      ? (options.extension ? ensureFileExtension(options.filename, options.extension) : options.filename)
+      : getDownloadFileName(file, 'arquivo', options?.extension);
+    await downloadFile(downloadURL, filename);
   } catch (err) {
     console.error('Download error:', err);
     alert('Arquivo antigo sem URL permanente. Reenvie o material.');
   }
+}
+
+async function handleVideoDownloadFile(file: any, fallback = 'video.mp4') {
+  await handleDownloadFile(file, { filename: getDownloadFileName(file, fallback, '.mp4'), extension: '.mp4' });
 }
 
 function hasEditableMaterial(item: ScheduleItem): boolean {
@@ -4850,7 +4869,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
               const name = getFileName(file, `${isAudio ? 'Audio' : 'Bruto'} #${idx + 1}`);
               return (
                 <div key={idx} className={`flex items-center justify-between gap-2 bg-[#0d0d0d] border border-[#1a1a1a] px-3 py-2 rounded-xl text-xs ${isAudio ? 'text-blue-400/90 hover:text-blue-400 hover:border-blue-500/20' : 'text-purple-400/90 hover:text-purple-400 hover:border-purple-500/20'} transition-all min-w-0`}>
-                  <button type="button" onClick={() => handleDownloadFile(file)} className="truncate font-semibold hover:underline flex-1 min-w-0 text-left" title={name}>
+                  <button type="button" onClick={() => isAudio ? handleDownloadFile(file) : handleVideoDownloadFile(file, name)} className="truncate font-semibold hover:underline flex-1 min-w-0 text-left" title={name}>
                     {name}
                   </button>
                   <div className="flex items-center gap-1 shrink-0">
@@ -4861,7 +4880,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                     >
                       <Play className="w-3.5 h-3.5" />
                     </button>
-                    <button type="button" onClick={() => handleDownloadFile(file)} className={`p-1 ${isAudio ? 'hover:bg-blue-500/10' : 'hover:bg-purple-500/10'} rounded transition-colors`} title="Baixar">
+                    <button type="button" onClick={() => isAudio ? handleDownloadFile(file) : handleVideoDownloadFile(file, name)} className={`p-1 ${isAudio ? 'hover:bg-blue-500/10' : 'hover:bg-purple-500/10'} rounded transition-colors`} title="Baixar">
                       <Download className="w-3.5 h-3.5" />
                     </button>
                     {!supplierDone && (
@@ -5219,7 +5238,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                     {videos.map((file: any, idx: number) => {
                                       const name = getFileName(file, `Bruto #${idx + 1}`);
                                       return (
-                                        <button type="button" key={`mobile-video-${idx}`} onClick={() => handleDownloadFile(file)} className="flex items-center gap-2 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 px-3 py-3 rounded-2xl text-xs font-bold transition-all w-full min-w-0" title={name}>
+                                        <button type="button" key={`mobile-video-${idx}`} onClick={() => handleVideoDownloadFile(file, name)} className="flex items-center gap-2 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 px-3 py-3 rounded-2xl text-xs font-bold transition-all w-full min-w-0" title={name}>
                                           <Video className="w-4 h-4 shrink-0" />
                                           <span className="truncate flex-1 text-left min-w-0">{name}</span>
                                           <Download className="w-4 h-4 shrink-0 text-gray-400" />
@@ -5266,6 +5285,17 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                         title="Reproduzir video pronto"
                                       >
                                         <Play className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          const file = finishedVideos[0] as any;
+                                          const name = typeof file === 'string' ? 'Video pronto' : (file.name || 'Video pronto');
+                                          handleVideoDownloadFile(file, name);
+                                        }}
+                                        className="p-3 bg-[#0a0a0a] border border-[#222] rounded-2xl text-green-500 hover:text-green-400"
+                                        title="Baixar video pronto"
+                                      >
+                                        <Download className="w-4 h-4" />
                                       </button>
                                       {userRole === 'editor' && (
                                         <button
@@ -5497,7 +5527,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                           const name = typeof file === 'string' ? `Bruto #${idx + 1}` : (file.name || `Bruto #${idx + 1}`);
                                           return (
                                             <div key={idx} className="flex items-center justify-between gap-2 bg-[#0d0d0d] border border-[#1a1a1a] px-3 py-2 rounded-xl text-xs text-purple-400/90 hover:text-purple-400 hover:border-purple-500/20 transition-all">
-                                              <button type="button" onClick={() => handleDownloadFile(file)} className="truncate font-semibold hover:underline flex-1 text-left" title={name}>
+                                              <button type="button" onClick={() => handleVideoDownloadFile(file, name)} className="truncate font-semibold hover:underline flex-1 text-left" title={name}>
                                                 {name}
                                               </button>
                                               <div className="flex items-center gap-1 flex-shrink-0">
@@ -5508,7 +5538,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                                 >
                                                   <Play className="w-3.5 h-3.5" />
                                                 </button>
-                                                <button type="button" onClick={() => handleDownloadFile(file)} className="p-1 hover:bg-purple-500/10 rounded text-purple-400 transition-colors" title="Baixar">
+                                                <button type="button" onClick={() => handleVideoDownloadFile(file, name)} className="p-1 hover:bg-purple-500/10 rounded text-purple-400 transition-colors" title="Baixar">
                                                   <Download className="w-3.5 h-3.5" />
                                                 </button>
                                                 <button 
@@ -5576,7 +5606,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                           return (
                                             <button type="button"
                                               key={`video-${idx}`}
-                                              onClick={() => handleDownloadFile(file)}
+                                              onClick={() => handleVideoDownloadFile(file, name)}
                                               className="flex items-center gap-1.5 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 px-2.5 py-1.5 rounded-xl text-xs font-semibold max-w-[200px] truncate transition-all w-full"
                                               title={name}
                                             >
@@ -5678,6 +5708,17 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                            title="Reproduzir video pronto"
                                          >
                                            <Play className="w-4 h-4" />
+                                         </button>
+                                         <button
+                                           onClick={() => {
+                                             const file = finishedVideos[0] as any;
+                                             const name = typeof file === 'string' ? 'Video pronto' : (file.name || 'Video pronto');
+                                             handleVideoDownloadFile(file, name);
+                                           }}
+                                           className="p-2 bg-[#0a0a0a] border border-[#222] rounded-xl text-green-500 hover:text-green-400"
+                                           title="Baixar video pronto"
+                                         >
+                                           <Download className="w-4 h-4" />
                                          </button>
                                          {userRole === 'editor' && (
                                            <button
@@ -5807,11 +5848,11 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                    const name = typeof pair.file === 'string' ? `Bruto #${idx + 1}` : pair.file.name;
                                    return (
                                      <div key={idx} className="flex items-center justify-between p-4 bg-[#141414] border border-[#222] rounded-2xl group/link hover:border-purple-500/50 transition-all">
-                                        <button type="button" onClick={() => handleDownloadFile(pair.file)} className="flex-1 truncate text-sm font-bold text-gray-400 hover:text-white mr-2 transition-colors text-left" title={name}>
+                                        <button type="button" onClick={() => handleVideoDownloadFile(pair.file, name)} className="flex-1 truncate text-sm font-bold text-gray-400 hover:text-white mr-2 transition-colors text-left" title={name}>
                                           {name}
                                         </button>
                                         <div className="flex items-center gap-1.5">
-                                          <button type="button" onClick={() => handleDownloadFile(pair.file)} className="p-1 text-gray-500 hover:text-purple-500 rounded transition-colors">
+                                          <button type="button" onClick={() => handleVideoDownloadFile(pair.file, name)} className="p-1 text-gray-500 hover:text-purple-500 rounded transition-colors">
                                             <Download className="w-4 h-4" />
                                           </button>
                                           {isPartner && (
@@ -5859,6 +5900,14 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                             title="Reproduzir Vídeo"
                                           >
                                             <Play className="w-4 h-4" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleVideoDownloadFile(pair.file, name)}
+                                            className="p-1.5 text-green-500/50 hover:text-green-500 bg-green-500/5 rounded-xl border border-green-500/10 hover:bg-green-500/20 transition-all cursor-pointer"
+                                            title="Baixar video"
+                                          >
+                                            <Download className="w-4 h-4" />
                                           </button>
                                           {(isPartner || userRole === 'editor') && (
                                             <button 
@@ -6029,7 +6078,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                           <div className="flex items-center justify-end gap-1.5">
                             <button
                               type="button"
-                              onClick={() => downloadFile(asset.url, asset.name)}
+                              onClick={() => downloadFile(asset.url, asset.type === 'audio' ? asset.name : ensureFileExtension(asset.name, '.mp4'))}
                               className="p-2 bg-[#0a0a0a] border border-[#222] rounded-xl text-gray-400 hover:text-white transition-all hover:border-gray-500"
                               title="Baixar"
                             >
@@ -6517,9 +6566,9 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                                     const url = getFileUrl(u);
                                     const name = typeof u === 'string' ? `Material #${idx + 1}` : u.name;
                                     return (
-                                      <button type="button" key={idx} onClick={() => handleDownloadFile(u)} className="text-sm text-white font-bold hover:text-orange-500 truncate flex items-center gap-2">
+                                      <button type="button" key={idx} onClick={() => type === 'audio' ? handleDownloadFile(u) : handleVideoDownloadFile(u, name)} className="text-sm text-white font-bold hover:text-orange-500 truncate flex items-center gap-2">
                                         <span className="truncate">{name}</span>
-                                        <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                                        <Download className="w-3 h-3 flex-shrink-0" />
                                       </button>
                                     );
                                   })}
@@ -10366,12 +10415,12 @@ function ReadyVideosManager({ schedule, accounts, products, producers, user, isP
     }
   };
 
-  const handleDownload = async (item: ScheduleItem, file: any) => {
+  const handleDownload = async (item: ScheduleItem, file: any, filename: string) => {
     await markReadyVideoAsDownloadedByPartner(item);
     const fileKey = getFileUrl(file) || getFileName(file);
     setDownloadingFile(fileKey);
     try {
-      await handleDownloadFile(file);
+      await handleVideoDownloadFile(file, filename);
     } finally {
       setTimeout(() => setDownloadingFile(null), 800);
     }
@@ -10465,7 +10514,7 @@ function ReadyVideosManager({ schedule, accounts, products, producers, user, isP
                       return (
                         <button
                           key={fIdx}
-                          onClick={() => handleDownload(item, file)}
+                          onClick={() => handleDownload(item, file, name)}
                           disabled={downloadingFile === url}
                           className="w-full bg-white hover:bg-gray-100 text-black py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg hover:shadow-white/5 active:scale-95 disabled:opacity-50 disabled:cursor-wait"
                         >
