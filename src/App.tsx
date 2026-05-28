@@ -150,6 +150,24 @@ function getFileUrl(file: any): string {
   return file.downloadURL || file.url || file.webViewLink || '';
 }
 
+function isPermanentDownloadUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url) || /^blob:/i.test(url) || /^data:/i.test(url);
+}
+
+async function resolveDownloadUrl(file: any): Promise<string> {
+  if (!file) return '';
+
+  if (typeof file !== 'string') {
+    if (file.downloadURL && isPermanentDownloadUrl(file.downloadURL)) return file.downloadURL;
+    if (file.storagePath) return getDownloadURL(ref(storage, file.storagePath));
+    if (file.url && isPermanentDownloadUrl(file.url)) return file.url;
+    if (file.webViewLink && isPermanentDownloadUrl(file.webViewLink)) return file.webViewLink;
+    return '';
+  }
+
+  return isPermanentDownloadUrl(file) ? file : '';
+}
+
 function getFileName(file: any, fallback = 'arquivo'): string {
   if (!file) return fallback;
   if (typeof file === 'string') return fallback;
@@ -224,36 +242,28 @@ async function uploadProductionFile(params: {
 }
 
 async function downloadFile(url: string, filename: string) {
-  try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Download failed with status ${response.status}`);
-    }
-
-    const blob = await response.blob();
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = filename || 'arquivo';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-  } catch (err) {
-    console.error('Blob download failed, opening file URL as fallback:', err);
-    window.open(url, '_blank');
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Download failed with status ${response.status}`);
   }
+
+  const blob = await response.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = filename || 'arquivo';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 }
 
 async function handleDownloadFile(file: any, options?: { filename?: string; extension?: string }) {
   try {
-    let downloadURL = getFileUrl(file);
-    if (!downloadURL && typeof file !== 'string' && file?.storagePath) {
-      downloadURL = await getDownloadURL(ref(storage, file.storagePath));
-    }
+    const downloadURL = await resolveDownloadUrl(file);
 
     if (!downloadURL) {
-      alert('Arquivo antigo sem URL permanente. Reenvie o material.');
+      alert('Arquivo antigo/local sem URL permanente no Firebase Storage. Peça ao sócio/fornecedor para reenviar o material.');
       return;
     }
 
@@ -263,7 +273,7 @@ async function handleDownloadFile(file: any, options?: { filename?: string; exte
     await downloadFile(downloadURL, filename);
   } catch (err) {
     console.error('Download error:', err);
-    alert('Arquivo antigo sem URL permanente. Reenvie o material.');
+    alert('Nao foi possivel baixar este arquivo automaticamente. Verifique se o arquivo possui URL permanente no Firebase Storage.');
   }
 }
 
@@ -4614,6 +4624,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
     const list: Array<{
       item: ScheduleItem;
       type: 'audio' | 'video' | 'finished';
+      file: any;
       url: string;
       name: string;
       productName: string;
@@ -4630,7 +4641,8 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
         list.push({
           item,
           type: 'audio',
-          url: typeof file === 'string' ? file : file.url,
+          file,
+          url: getFileUrl(file),
           name: typeof file === 'string' ? 'Áudio Base' : file.name,
           productName,
           date: item.date
@@ -4643,7 +4655,8 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
         list.push({
           item,
           type: 'video',
-          url: typeof file === 'string' ? file : file.url,
+          file,
+          url: getFileUrl(file),
           name: typeof file === 'string' ? 'Material Bruto' : file.name,
           productName,
           date: item.date
@@ -4656,7 +4669,8 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
         list.push({
           item,
           type: 'finished',
-          url: typeof file === 'string' ? file : file.url,
+          file,
+          url: getFileUrl(file),
           name: typeof file === 'string' ? 'Vídeo Final' : file.name,
           productName,
           date: item.date
@@ -6078,7 +6092,7 @@ function Production({ schedule, accounts, products, producers, userProfiles, use
                           <div className="flex items-center justify-end gap-1.5">
                             <button
                               type="button"
-                              onClick={() => downloadFile(asset.url, asset.type === 'audio' ? asset.name : ensureFileExtension(asset.name, '.mp4'))}
+                              onClick={() => asset.type === 'audio' ? handleDownloadFile(asset.file) : handleVideoDownloadFile(asset.file, asset.name)}
                               className="p-2 bg-[#0a0a0a] border border-[#222] rounded-xl text-gray-400 hover:text-white transition-all hover:border-gray-500"
                               title="Baixar"
                             >
